@@ -1,8 +1,14 @@
 #include <iostream>
+//#include "../deps/challenge-bypass-ristretto-ffi/src/wrapper.hpp"
+#include "wrapper.hpp"
+
+using namespace challenge_bypass_ristretto;
 
 int main() {
 
-  std::cout << "make all works" << std::endl;
+  SigningKey sKey = SigningKey::random();
+
+  std::cout << "make all works: " << sKey.encode_base64() << std::endl;
 
   return 0;
 }
