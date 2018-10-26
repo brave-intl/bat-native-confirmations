@@ -35,6 +35,10 @@ int main() {
 
   std::string mock_key("mock_key");
   std::vector<std::string> mock_sbc;
+  std::string mock_confirmation_id = "mock_conf_id";
+  std::string mock_worth = "mock_pub_key_for_lookup_in_catalog";
+  std::vector<std::string> mock_sbp;
+  std::string mock_sbp_token;
 
   // TODO we should pr. do this as multiple queues, unprocessed vs. processed 
   //      this is sort of dependent on the strategy we use for tagging them from the server...
@@ -44,15 +48,42 @@ int main() {
   conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(mock_key);
 
   // TODO this should pr. happen on a background thread
-  conf_client.step_2_1_batchGenerateTokensAndBlindThem();
+  conf_client.step_2_1_batchGenerateConfirmationTokensAndBlindThem();
 
-  //step_2_2 POST the tokens via client
-  //step_2_3 GET the returned values
+  // TODO step_2_2 POST the tokens via client
+  // TODO step_2_3 GET the returned values
 
-  mock_sbc = mock_server.generateSignedBlindedConfirmationTokens(conf_client.blinded_confirmation_tokens);
+  mock_sbc = mock_server.generateSignedBlindedTokens(conf_client.blinded_confirmation_tokens);
 
+  // TODO should we simply unblind signed tokens on receipt instead of waiting?
+  // TODO DLEQ
   conf_client.step_2_4_storeTheSignedBlindedConfirmations(mock_sbc);
   conf_client.step_3_1a_unblindSignedBlindedConfirmations();
+
+  conf_client.step_3_1b_generatePaymentTokenAndBlindIt();
+
+  // TODO step_3_1c POST /.../{confirmationId}/{credential}, which is (t, MAC_(sk)(R))
+  // TODO on success, pop fronts: 
+  conf_client.popFrontConfirmation();
+
+  conf_client.step_3_2_storeConfirmationIdAndWorth(mock_confirmation_id, mock_worth);
+
+  // TODO step_4_1 GET /.../tokens/{paymentId}
+
+  mock_sbp = mock_server.generateSignedBlindedTokens(conf_client.blinded_payment_tokens);
+  mock_sbp_token = mock_sbc.front();
+
+  conf_client.step_4_2_storeSignedBlindedPaymentToken(mock_sbp_token);
+
+  // TODO DLEQ
+
+  conf_client.step_5_1_unblindSignedBlindedPayments();
+  // TODO  PUT  (POST?) /.../tokens/{paymentId}
+  // TODO how long are we keeping these txn ids around? what is format of "actual payment" ? 
+  conf_client.step_5_2_storeTransactionIdsAndActualPayment();
+  
+  // TODO actually, on success we pop payments equal to # retrieved, not just first:
+  //conf_client.popFrontPayment();
 
   return 0;
 }
