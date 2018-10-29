@@ -30,7 +30,7 @@ namespace bat_native_confirmations {
     std::cout << "step1.1 key: " << this->server_confirmations_key << std::endl;
   }
 
-  void Confirmations::step_2_1_batchGenerateConfirmationTokensAndBlindThem() {
+  void Confirmations::step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem() {
 
     if (blinded_confirmation_tokens.size() > low_token_threshold) {
       return;
@@ -169,6 +169,12 @@ namespace bat_native_confirmations {
     // TODO: serialize
     // TODO: call out to client
     std::cout << "saving state... | ";
+  }
+
+  void Confirmations::loadState() {
+    // TODO: deserialize
+    // TODO: call out to client?
+    std::cout << "loading state... | ";
   }
 
   void Confirmations::popFrontConfirmation() {

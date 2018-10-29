@@ -29,7 +29,7 @@ namespace bat_native_confirmations {
     ////////////////////////////////////////
     void test();
     void step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string GHpair);
-    void step_2_1_batchGenerateConfirmationTokensAndBlindThem();
+    void step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem();
     void step_2_4_storeTheSignedBlindedConfirmations(std::vector<std::string> server_signed_blinded_confirmations);
     void step_3_1a_unblindSignedBlindedConfirmations();
     void step_3_1b_generatePaymentTokenAndBlindIt();
@@ -41,6 +41,7 @@ namespace bat_native_confirmations {
     void popFrontConfirmation();
     void popFrontPayment();
     void saveState();
+    void loadState();
 
     Confirmations();
     ~Confirmations();
