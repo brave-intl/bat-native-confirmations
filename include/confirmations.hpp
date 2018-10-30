@@ -8,6 +8,8 @@ namespace bat_native_confirmations {
 
   class Confirmations {
    public:
+    std::mutex mutex;
+
     const int low_token_threshold = 1;
     const int refill_amount = 5 * low_token_threshold;
 
@@ -53,6 +55,7 @@ namespace bat_native_confirmations {
   class MockServer {
    public:
     SigningKey signing_key = SigningKey::random();
+    PublicKey public_key = signing_key.public_key();
     std::vector<std::string> generateSignedBlindedTokens(std::vector<std::string>);
     void test();
     MockServer() {};

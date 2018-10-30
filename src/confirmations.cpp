@@ -76,7 +76,7 @@ namespace bat_native_confirmations {
     Token restored_token = Token::decode_base64(orig_token_b64);
     SignedToken signed_token = SignedToken::decode_base64(sb_token_b64);
     // use blinding scalar to unblind
-    UnblindedToken client_unblinded_token = restored_token.unblind(&signed_token);
+    UnblindedToken client_unblinded_token = restored_token.unblind(signed_token);
     // dehydrate  
     std::string base64_unblinded_token = client_unblinded_token.encode_base64();
     // put on object
@@ -146,7 +146,7 @@ namespace bat_native_confirmations {
       Token restored_token = Token::decode_base64(orig_token_b64);
       SignedToken signed_token = SignedToken::decode_base64(sb_token_b64);
       // use blinding scalar to unblind
-      UnblindedToken client_unblinded_token = restored_token.unblind(&signed_token);
+      UnblindedToken client_unblinded_token = restored_token.unblind(signed_token);
       // dehydrate  
       std::string base64_unblinded_token = client_unblinded_token.encode_base64();
       // put on object
@@ -209,7 +209,7 @@ namespace bat_native_confirmations {
       // rehydrate the token from the base64 string
       BlindedToken blinded_token = BlindedToken::decode_base64(x);
       // server signs the blinded token 
-      SignedToken signed_token = this->signing_key.sign(&blinded_token);
+      SignedToken signed_token = this->signing_key.sign(blinded_token);
       // and returns the blinded token and dleq proof^H^H^H^H^H^H^H^H^H^H to the client
       std::string base64_signed_token = signed_token.encode_base64();
       // std::cout<<"[SERVER] base64_signed_tok: "<<base64_signed_token<<"\n";
