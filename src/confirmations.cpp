@@ -164,7 +164,36 @@ namespace bat_native_confirmations {
     this->saveState();
     std::cout << "step5.2 store txn ids and actual payment" << std::endl;
   }
+
+  bool Confirmations::verifyBatchDLEQProof(std::string proof_string,
+                                           std::vector<std::string> blinded_strings,
+                                           std::vector<std::string> signed_strings,
+                                           std::string public_key_string) {
+
+    bool failure = 0;
+    bool success = 1;
+
+    BatchDLEQProof batch_proof = BatchDLEQProof::decode_base64(proof_string);
+
+    std::vector<BlindedToken> blinded_tokens;
+    for (auto x : blinded_strings) {
+      blinded_tokens.push_back(BlindedToken::decode_base64(x));
+    }
+
+    std::vector<SignedToken> signed_tokens;
+    for (auto x : signed_strings) {
+      signed_tokens.push_back(SignedToken::decode_base64(x));
+    }
+
+    PublicKey public_key = PublicKey::decode_base64(public_key_string);
+    
+    if (!batch_proof.verify(blinded_tokens, signed_tokens, public_key)) {
+      return failure;
+    }
   
+    return success;
+  }
+
   void Confirmations::saveState() {
     // TODO: serialize
     // TODO: call out to client

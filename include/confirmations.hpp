@@ -40,6 +40,11 @@ namespace bat_native_confirmations {
     void step_5_1_unblindSignedBlindedPayments();
     void step_5_2_storeTransactionIdsAndActualPayment();
 
+    bool verifyBatchDLEQProof(std::string proof_string, 
+                              std::vector<std::string> blind_strings,
+                              std::vector<std::string> signed_strings,
+                              std::string public_key_string);
+
     void popFrontConfirmation();
     void popFrontPayment();
     void saveState();

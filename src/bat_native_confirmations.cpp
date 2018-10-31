@@ -33,13 +33,14 @@ int main() {
   bat_native_confirmations::Confirmations conf_client;
   bat_native_confirmations::MockServer mock_server;
 
-  std::string mock_key("mock_key");
+  std::string mock_public_key = mock_server.public_key.encode_base64();
   std::vector<std::string> mock_sbc;
   std::string mock_confirmation_id = "mock_conf_id";
   std::string mock_worth = "mock_pub_key_for_lookup_in_catalog";
   std::vector<std::string> mock_sbp;
   std::string mock_sbp_token;
-  std::string mock_proof;
+  std::string mock_confirmation_proof;
+  std::string mock_payment_proof;
 
   // TODO we should pr. do this as multiple queues, unprocessed vs. processed 
   //      this is sort of dependent on the strategy we use for tagging them from the server...
@@ -48,7 +49,7 @@ int main() {
   // TODO: this will get called by bat-native-ads whenever it downloads the ad catalog w/ keys
   {
     conf_client.mutex.lock();
-    conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(mock_key);
+    conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(mock_public_key);
     conf_client.mutex.unlock();
   }
 
@@ -63,13 +64,24 @@ int main() {
     // TODO step_2_3 GET the returned values
     // TODO 2x, on inet failure, retry or cleanup & unlock
 
+
     mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_confirmation_tokens);
     mock_sbc = mock_server.signed_tokens;
-    mock_proof = mock_server.batch_dleq_proof;
+    mock_confirmation_proof = mock_server.batch_dleq_proof;
+
+    conf_client.step_2_4_storeTheSignedBlindedConfirmations(mock_sbc);
+
+    bool verified = conf_client.verifyBatchDLEQProof(mock_confirmation_proof, 
+                                                     conf_client.blinded_confirmation_tokens,
+                                                     conf_client.signed_blinded_confirmation_tokens,
+                                                     mock_public_key);
+    if (!verified) {
+      //TODO Fail
+      std::cerr << "ERROR: Confirmations proof invalid" << std::endl;
+    }
 
     // TODO should we simply unblind signed tokens on receipt instead of waiting?
 
-    conf_client.step_2_4_storeTheSignedBlindedConfirmations(mock_sbc);
     conf_client.mutex.unlock();
   }
 
@@ -100,9 +112,18 @@ int main() {
     mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_payment_tokens);
     mock_sbp = mock_server.signed_tokens;
     mock_sbp_token = mock_sbp.front();
-    mock_proof = mock_server.batch_dleq_proof;
+    mock_payment_proof = mock_server.batch_dleq_proof;
 
     conf_client.step_4_2_storeSignedBlindedPaymentToken(mock_sbp_token);
+
+    bool verified = conf_client.verifyBatchDLEQProof(mock_payment_proof, 
+                                                     conf_client.blinded_payment_tokens,
+                                                     conf_client.signed_blinded_payment_tokens,
+                                                     mock_public_key);
+    if (!verified) {
+      //TODO Fail
+      std::cerr << "ERROR: Payment proof invalid" << std::endl;
+    }
 
     conf_client.mutex.unlock();
   }
