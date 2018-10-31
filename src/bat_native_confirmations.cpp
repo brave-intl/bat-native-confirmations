@@ -39,6 +39,7 @@ int main() {
   std::string mock_worth = "mock_pub_key_for_lookup_in_catalog";
   std::vector<std::string> mock_sbp;
   std::string mock_sbp_token;
+  std::string mock_proof;
 
   // TODO we should pr. do this as multiple queues, unprocessed vs. processed 
   //      this is sort of dependent on the strategy we use for tagging them from the server...
@@ -62,10 +63,11 @@ int main() {
     // TODO step_2_3 GET the returned values
     // TODO 2x, on inet failure, retry or cleanup & unlock
 
-    mock_sbc = mock_server.generateSignedBlindedTokens(conf_client.blinded_confirmation_tokens);
+    mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_confirmation_tokens);
+    mock_sbc = mock_server.signed_tokens;
+    mock_proof = mock_server.batch_dleq_proof;
 
     // TODO should we simply unblind signed tokens on receipt instead of waiting?
-    // TODO DLEQ
 
     conf_client.step_2_4_storeTheSignedBlindedConfirmations(mock_sbc);
     conf_client.mutex.unlock();
@@ -95,12 +97,13 @@ int main() {
     // TODO step_4_1 GET /.../tokens/{paymentId}
     // TODO on inet failure, retry or cleanup & unlock
 
-    mock_sbp = mock_server.generateSignedBlindedTokens(conf_client.blinded_payment_tokens);
-    mock_sbp_token = mock_sbc.front();
+    mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_payment_tokens);
+    mock_sbp = mock_server.signed_tokens;
+    mock_sbp_token = mock_sbp.front();
+    mock_proof = mock_server.batch_dleq_proof;
 
     conf_client.step_4_2_storeSignedBlindedPaymentToken(mock_sbp_token);
 
-    // TODO DLEQ
     conf_client.mutex.unlock();
   }
 

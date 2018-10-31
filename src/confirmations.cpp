@@ -201,22 +201,37 @@ namespace bat_native_confirmations {
     // std::cout << __PRETTY_FUNCTION__ << std::endl;
   }
 
-  std::vector<std::string> MockServer::generateSignedBlindedTokens(std::vector<std::string> blinded) {
+  void MockServer::generateSignedBlindedTokensAndProof(std::vector<std::string> blinded_tokens) {
 
     std::vector<std::string> stamped;
 
-    for (auto x : blinded) {
+    std::vector<BlindedToken> rehydrated_blinded_tokens;
+    std::vector<SignedToken>  rehydrated_signed_tokens;
+
+    for (auto x : blinded_tokens) {
       // rehydrate the token from the base64 string
       BlindedToken blinded_token = BlindedToken::decode_base64(x);
+      // keep it for the proof later
+      rehydrated_blinded_tokens.push_back(blinded_token);
+
       // server signs the blinded token 
       SignedToken signed_token = this->signing_key.sign(blinded_token);
-      // and returns the blinded token and dleq proof^H^H^H^H^H^H^H^H^H^H to the client
+      // keep it for the proof later
+      rehydrated_signed_tokens.push_back(signed_token);
+
       std::string base64_signed_token = signed_token.encode_base64();
       // std::cout<<"[SERVER] base64_signed_tok: "<<base64_signed_token<<"\n";
       stamped.push_back(base64_signed_token);
     }
 
-    return stamped;
+    BatchDLEQProof server_batch_proof = BatchDLEQProof(rehydrated_blinded_tokens, rehydrated_signed_tokens, this->signing_key);;
+    std::string base64_batch_proof = server_batch_proof.encode_base64();
+    // std::cout<<"[SERVER] base64_batch_proof: "<<base64_batch_proof<<"\n";
+
+    this->signed_tokens = stamped;
+    this->batch_dleq_proof = base64_batch_proof;
+
+    return;
   }
 
 }
