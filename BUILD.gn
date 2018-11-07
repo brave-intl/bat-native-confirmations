@@ -12,7 +12,9 @@ if (is_android || defined(is_docker)) {
 }
 
 config("external_config") {
-  include_dirs = [ "include" ]
+  include_dirs = [ "include", 
+                   "deps/challenge-bypass-ristretto-ffi/src/",
+  ]
 }
 
 config("internal_config") {
@@ -66,6 +68,7 @@ source_set("confirmations") {
   output_name = "bat_native_confirmations"
 
   sources = [
+    "deps/challenge-bypass-ristretto-ffi/src/wrapper.hpp",
     "include/confirmations.hpp",
     "src/bat_native_confirmations.cpp",
     "src/confirmations.cpp",

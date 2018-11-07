@@ -2,16 +2,16 @@
 #include <iostream>
 #include <vector>
 
-using namespace challenge_bypass_ristretto;
-
 namespace bat_native_confirmations {
+
+  using namespace challenge_bypass_ristretto;
 
   class Confirmations {
    public:
     std::mutex mutex;
 
-    const int low_token_threshold = 20;
-    const int refill_amount = 5 * low_token_threshold;
+    const size_t low_token_threshold = 20;
+    const size_t refill_amount = 5 * low_token_threshold;
 
     std::string server_confirmations_key;
 
@@ -68,7 +68,7 @@ namespace bat_native_confirmations {
     void generateSignedBlindedTokensAndProof(std::vector<std::string> blinded_tokens);
 
     void test();
-    MockServer() {};
-    ~MockServer() {};
+    MockServer();
+    ~MockServer();
   };
 }

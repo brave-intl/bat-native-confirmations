@@ -2,8 +2,6 @@
 #include "wrapper.hpp"
 #include "confirmations.hpp"
 
-using namespace challenge_bypass_ristretto;
-
 namespace bat_native_confirmations {
 
   Confirmations::Confirmations() {
@@ -224,6 +222,14 @@ namespace bat_native_confirmations {
     a.erase(a.begin());
     b.erase(b.begin());
     c.erase(c.begin());
+  }
+
+  MockServer::~MockServer() {
+
+  }
+
+  MockServer::MockServer() {
+
   }
 
   void MockServer::test() {
