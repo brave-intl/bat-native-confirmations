@@ -2,10 +2,19 @@
 #include "wrapper.hpp"
 #include "confirmations.hpp"
 
+#include "base/json/json_writer.h"
+#include "base/values.h"
+
 using namespace challenge_bypass_ristretto;
 using namespace bat_native_confirmations;
 
 int main() {
+
+  base::Value data;
+  std::string str;
+  base::JSONWriter::Write(data, &str);
+
+  std::cout << "hi\n";
 
   //  Client's role, from protocol-flow.png:
   //

@@ -21,19 +21,19 @@ config("internal_config") {
   include_dirs = [ "src" ]
 }
 
-# executable("test") {
-# 
-#   sources = [
-#     "test.cc"
-#   ]
-# 
-#   include_dirs = [ "src" ]
-# 
-#   deps = [
-#     ":confirmations",
-#     rebase_path("bat-native-rapidjson", dep_base),
-#   ]
-# }
+executable("bnc-test") {
+
+  sources = [
+     "src/bat_native_confirmations.cpp",
+  ]
+
+  include_dirs = [ "src" ]
+
+  deps = [
+    ":confirmations",
+    rebase_path("bat-native-rapidjson", dep_base),
+  ]
+}
 
 group("bat-native-confirmations") {
   public_deps = [
@@ -67,10 +67,16 @@ source_set("confirmations") {
 
   output_name = "bat_native_confirmations"
 
+  libs = [
+    "Security.framework",
+    "deps/challenge-bypass-ristretto-ffi/target/debug/libchallenge_bypass_ristretto.a",
+  ]
+
   sources = [
     "deps/challenge-bypass-ristretto-ffi/src/wrapper.hpp",
+    "deps/challenge-bypass-ristretto-ffi/src/wrapper.cpp",
+    "deps/challenge-bypass-ristretto-ffi/src/lib.h",
     "include/confirmations.hpp",
-    "src/bat_native_confirmations.cpp",
     "src/confirmations.cpp",
   ]
 
