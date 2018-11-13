@@ -4,7 +4,6 @@
 #include <iostream>
 #include <memory>
 
-#include "base/values.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 
@@ -14,7 +13,7 @@ namespace bat_native_confirmations {
     // std::cout << "Confirmations created\n"; 
   };
 
-  Confirmations::~Confirmations() { 
+  Confirmations::~Confirmations() {
     // std::cout << "Confirmations destroyed\n"; 
   }
 
@@ -200,7 +199,7 @@ namespace bat_native_confirmations {
 
   std::unique_ptr<base::ListValue> munge(std::vector<std::string> v) {
 
-     base::ListValue * list = new base::ListValue();
+    base::ListValue * list = new base::ListValue();
 
     for (auto x : v) {
       list->AppendString(x);
@@ -209,7 +208,21 @@ namespace bat_native_confirmations {
     return std::unique_ptr<base::ListValue>(list); 
   }
 
-  std::string Confirmations::jsonString() {
+  std::vector<std::string> Confirmations::unmunge(base::Value *value) {
+    std::vector<std::string> v;
+
+    base::ListValue list(value->GetList());
+
+    for (size_t i = 0; i < list.GetSize(); i++) {
+      base::Value *x;
+      list.Get(i, &x);
+      v.push_back(x->GetString());
+    }
+
+    return v;
+  }
+
+  std::string Confirmations::toJSONString() {
     base::DictionaryValue dict;
      
     dict.SetKey("server_confirmations_key", base::Value(server_confirmations_key));
@@ -233,21 +246,92 @@ namespace bat_native_confirmations {
     return json;
   }
 
+  bool Confirmations::fromJSONString(std::string json_string) {
+    bool fail = 0;
+    bool succeed = 1;
+
+    std::unique_ptr<base::Value> value(base::JSONReader::Read(json_string));
+
+    if (!value) {
+      return fail;
+    }
+
+    base::DictionaryValue* dict;
+    if (!value->GetAsDictionary(&dict)) {
+      return fail;
+    }
+
+    base::Value *v;
+    //std::cerr << "v: " << v->GetString() << "\n";
+
+    // if (!(v = dict->FindKey(""))) return fail;
+    // this->= v->GetString();
+
+    if (!(v = dict->FindKey("server_confirmations_key"))) return fail;
+    this->server_confirmations_key = v->GetString();
+
+    if (!(v = dict->FindKey("original_confirmation_tokens"))) return fail;
+    this->original_confirmation_tokens = unmunge(v);
+
+    if (!(v = dict->FindKey("blinded_confirmation_tokens"))) return fail;
+    this->blinded_confirmation_tokens = unmunge(v);
+
+    if (!(v = dict->FindKey("signed_blinded_confirmation_tokens"))) return fail;
+    this->signed_blinded_confirmation_tokens = unmunge(v);
+
+    if (!(v = dict->FindKey("unblinded_signed_confirmation_token"))) return fail;
+    this->unblinded_signed_confirmation_token = v->GetString();
+
+    if (!(v = dict->FindKey("original_payment_tokens"))) return fail;
+    this->original_payment_tokens = unmunge(v);
+
+    if (!(v = dict->FindKey("blinded_payment_tokens"))) return fail;
+    this->blinded_payment_tokens = unmunge(v);
+
+    if (!(v = dict->FindKey("signed_blinded_payment_tokens"))) return fail;
+    this->signed_blinded_payment_tokens = unmunge(v);
+
+    if (!(v = dict->FindKey("unblinded_signed_payment_tokens"))) return fail;
+    this->unblinded_signed_payment_tokens = unmunge(v);
+
+    if (!(v = dict->FindKey("confirmation_id"))) return fail;
+    this->confirmation_id = v->GetString();
+
+    if (!(v = dict->FindKey("payment_worth"))) return fail;
+    this->payment_worth = v->GetString();
+
+    return succeed;
+  }
+
   void Confirmations::saveState() {
     // TODO: call out to client
-    std::string json = jsonString();
+    std::string json = toJSONString();
 
-    std::cout << json<< "\n\n\n\n";
+    assert(this->fromJSONString(json));
+    //this->server_confirmations_key = "bort";
+    std::string json2 = toJSONString();
+    assert(json2 == json);
+
+    // std::cout << json<< "\n\n\n\n";
     std::cout << "saving state... | ";
   }
 
-  void Confirmations::loadState() {
-    // TODO: deserialize
+  bool Confirmations::loadState(std::string json_state) {
+    // returns false on failure to load (eg, malformed json)
     // TODO: call out to client?
 
-    //std::unique_ptr<base::Value> val( base::JSONReader::Read(json) );
+    bool fail = 0;
+    bool succeed = 1;
+
+    bool parsed = this->fromJSONString(json_state);
+
+    if (!parsed) {
+      return fail;
+    }
 
     std::cout << "loading state... | ";
+
+    return succeed;
   }
 
   void Confirmations::popFrontConfirmation() {

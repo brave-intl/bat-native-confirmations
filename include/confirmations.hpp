@@ -1,9 +1,9 @@
 #pragma once
 #include <mutex>
 #include "wrapper.hpp"
+#include "base/values.h"
 
 namespace bat_native_confirmations {
-
   using namespace challenge_bypass_ristretto;
 
   class Confirmations {
@@ -48,8 +48,10 @@ namespace bat_native_confirmations {
     void popFrontConfirmation();
     void popFrontPayment();
     void saveState();
-    void loadState();
-    std::string jsonString();
+    bool loadState(std::string json_state);
+    std::string toJSONString();
+    bool fromJSONString(std::string json);
+    std::vector<std::string> unmunge(base::Value *value);
 
     Confirmations();
     ~Confirmations();
