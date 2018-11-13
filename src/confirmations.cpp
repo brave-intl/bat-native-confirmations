@@ -1,6 +1,12 @@
-#include <iostream>
-#include "wrapper.hpp"
 #include "confirmations.hpp"
+
+#include <vector>
+#include <iostream>
+#include <memory>
+
+#include "base/values.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 
 namespace bat_native_confirmations {
 
@@ -30,12 +36,12 @@ namespace bat_native_confirmations {
 
   void Confirmations::step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem() {
 
+
     if (blinded_confirmation_tokens.size() > low_token_threshold) {
       return;
     }
 
     while (blinded_confirmation_tokens.size() < refill_amount) {
-
       // client prepares a random token and blinding scalar pair
       Token token = Token::random();
       std::string token_base64 = token.encode_base64();
@@ -192,15 +198,55 @@ namespace bat_native_confirmations {
     return success;
   }
 
+  std::unique_ptr<base::ListValue> munge(std::vector<std::string> v) {
+
+     base::ListValue * list = new base::ListValue();
+
+    for (auto x : v) {
+      list->AppendString(x);
+    }
+
+    return std::unique_ptr<base::ListValue>(list); 
+  }
+
+  std::string Confirmations::jsonString() {
+    base::DictionaryValue dict;
+     
+    dict.SetKey("server_confirmations_key", base::Value(server_confirmations_key));
+    dict.SetWithoutPathExpansion("original_confirmation_tokens", munge(original_confirmation_tokens));
+    dict.SetWithoutPathExpansion("blinded_confirmation_tokens", munge(blinded_confirmation_tokens));
+    dict.SetWithoutPathExpansion("signed_blinded_confirmation_tokens", munge(signed_blinded_confirmation_tokens));
+    dict.SetKey("unblinded_signed_confirmation_token", base::Value(unblinded_signed_confirmation_token));
+    dict.SetWithoutPathExpansion("original_payment_tokens", munge(original_payment_tokens));
+    dict.SetWithoutPathExpansion("blinded_payment_tokens", munge(blinded_payment_tokens));
+    dict.SetWithoutPathExpansion("signed_blinded_payment_tokens", munge(signed_blinded_payment_tokens));
+    dict.SetWithoutPathExpansion("unblinded_signed_payment_tokens", munge(unblinded_signed_payment_tokens));
+    dict.SetKey("confirmation_id", base::Value(confirmation_id));
+    dict.SetKey("payment_worth", base::Value(payment_worth));
+
+    std::string json;
+    base::JSONWriter::Write(dict, &json);
+
+    //std::unique_ptr<base::Value> val( base::JSONReader::Read(json) );
+    //assert(dict.Equals(val.get()));
+
+    return json;
+  }
+
   void Confirmations::saveState() {
-    // TODO: serialize
     // TODO: call out to client
+    std::string json = jsonString();
+
+    std::cout << json<< "\n\n\n\n";
     std::cout << "saving state... | ";
   }
 
   void Confirmations::loadState() {
     // TODO: deserialize
     // TODO: call out to client?
+
+    //std::unique_ptr<base::Value> val( base::JSONReader::Read(json) );
+
     std::cout << "loading state... | ";
   }
 

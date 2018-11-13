@@ -1,6 +1,6 @@
 #pragma once
-#include <iostream>
-#include <vector>
+#include <mutex>
+#include "wrapper.hpp"
 
 namespace bat_native_confirmations {
 
@@ -10,8 +10,8 @@ namespace bat_native_confirmations {
    public:
     std::mutex mutex;
 
-    const size_t low_token_threshold = 20;
-    const size_t refill_amount = 5 * low_token_threshold;
+    const size_t low_token_threshold = 2; // 20 
+    const size_t refill_amount = 1 * low_token_threshold; // 5
 
     std::string server_confirmations_key;
 
@@ -49,6 +49,7 @@ namespace bat_native_confirmations {
     void popFrontPayment();
     void saveState();
     void loadState();
+    std::string jsonString();
 
     Confirmations();
     ~Confirmations();
