@@ -31,7 +31,6 @@ executable("bnc-test") {
 
   deps = [
     ":confirmations",
-    rebase_path("bat-native-rapidjson", dep_base),
   ]
 }
 
@@ -82,6 +81,5 @@ source_set("confirmations") {
 
   deps = [
     "//base",
-    rebase_path("bat-native-rapidjson", dep_base),
   ]
 }
