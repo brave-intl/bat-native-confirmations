@@ -7,6 +7,12 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 
+#include "tweetnacl.h"
+#include <openssl/base64.h>
+#include <openssl/digest.h>
+#include <openssl/hkdf.h>
+#include <openssl/sha.h>
+
 namespace bat_native_confirmations {
 
   Confirmations::Confirmations() {
@@ -397,6 +403,46 @@ namespace bat_native_confirmations {
     this->batch_dleq_proof = base64_batch_proof;
 
     return;
+  }
+
+  std::string getBase64(const std::vector<uint8_t>& in) {
+    std::string res;
+    size_t size = 0;
+    if (!EVP_EncodedLength(&size, in.size())) {
+      DCHECK(false);
+      LOG(ERROR) << "EVP_EncodedLength failure in getBase64";
+
+      return "";
+    }
+    std::vector<uint8_t> out(size);
+    int numEncBytes = EVP_EncodeBlock(&out.front(), &in.front(), in.size());
+    DCHECK(numEncBytes != 0);
+    res = (char*)&out.front();
+    return res;
+  }
+
+  std::string Confirmations::sign(std::string* keys, std::string* values, const unsigned int& size,
+       const std::string& keyId, const std::vector<uint8_t>& secretKey) {
+     std::string headers;
+     std::string message;
+     for (unsigned int i = 0; i < size; i++) {
+       if (0 != i) {
+         headers += " ";
+         message += "\n";
+       }
+       headers += keys[i];
+       message += keys[i] + ": " + values[i];
+     }
+     std::vector<uint8_t> signedMsg(crypto_sign_BYTES + message.length());
+
+     unsigned long long signedMsgSize = 0;
+     crypto_sign(&signedMsg.front(), &signedMsgSize, (const unsigned char*)message.c_str(), (unsigned long long)message.length(), &secretKey.front());
+
+     std::vector<uint8_t> signature(crypto_sign_BYTES);
+     std::copy(signedMsg.begin(), signedMsg.begin() + crypto_sign_BYTES, signature.begin());
+
+     return "keyId=\"" + keyId + "\",algorithm=\"" + CONFIRMATIONS_SIGNATURE_ALGORITHM +
+       "\",headers=\"" + headers + "\",signature=\"" + getBase64(signature) + "\"";
   }
 
 }

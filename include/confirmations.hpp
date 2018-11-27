@@ -3,6 +3,8 @@
 #include "wrapper.hpp"
 #include "base/values.h"
 
+#define CONFIRMATIONS_SIGNATURE_ALGORITHM "ed25519"
+
 namespace bat_native_confirmations {
   using namespace challenge_bypass_ristretto;
 
@@ -52,6 +54,8 @@ namespace bat_native_confirmations {
     std::string toJSONString();
     bool fromJSONString(std::string json);
     std::vector<std::string> unmunge(base::Value *value);
+
+    std::string sign(std::string* keys, std::string* values, const unsigned int& size, const std::string& keyId, const std::vector<uint8_t>& secretKey);
 
     Confirmations();
     ~Confirmations();

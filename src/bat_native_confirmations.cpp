@@ -1,12 +1,12 @@
 #include <iostream>
 #include "wrapper.hpp"
 #include "confirmations.hpp"
+#include "base/guid.h"
 
 using namespace challenge_bypass_ristretto;
 using namespace bat_native_confirmations;
 
 int main() {
-
 
   //  Client's role, from protocol-flow.png:
   //
@@ -36,12 +36,13 @@ int main() {
 
   std::string mock_public_key = mock_server.public_key.encode_base64();
   std::vector<std::string> mock_sbc;
-  std::string mock_confirmation_id = "mock_conf_id";
   std::string mock_worth = "mock_pub_key_for_lookup_in_catalog";
   std::vector<std::string> mock_sbp;
   std::string mock_sbp_token;
   std::string mock_confirmation_proof;
   std::string mock_payment_proof;
+
+  // TODO process these mock calls into real(+mock?) endpoints for bat-native-ads
 
   // TODO we should pr. do this as multiple queues, unprocessed vs. processed 
   //      this is sort of dependent on the strategy we use for tagging them from the server...
@@ -95,11 +96,22 @@ int main() {
     conf_client.step_3_1b_generatePaymentTokenAndBlindIt();
 
     // TODO step_3_1c POST /.../{confirmationId}/{credential}, which is (t, MAC_(sk)(R))
+
+    std::string confirmation_id = base::GenerateGUID();
+    std::string request_body = "";
+    std::string credential = "";
+
+    // what's `t`? unblinded_signed_confirmation_token
+    std::cerr << "unblinded_signed_confirmation_token: " << (conf_client.unblinded_signed_confirmation_token) << "\n";
+    // what's `MAC_{sk}(R)`? item from blinded_payment_tokens
+    std::cerr << "blinded_payment_tokens: " << (conf_client.blinded_payment_tokens[0]) << "\n";
+
     // TODO on success, pop fronts: 
     conf_client.popFrontConfirmation();
     // TODO on inet failure, retry or cleanup & unlock
 
-    conf_client.step_3_2_storeConfirmationIdAndWorth(mock_confirmation_id, mock_worth);
+    // TODO guessing we're going to have to store multiple confirmation_id ?
+    conf_client.step_3_2_storeConfirmationIdAndWorth(confirmation_id, mock_worth);
     conf_client.mutex.unlock();
   }
 
