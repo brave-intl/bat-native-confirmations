@@ -25,9 +25,13 @@ executable("bnc-test") {
 
   sources = [
      "src/bat_native_confirmations.cpp",
+     "deps/happyhttp/happyhttp.cpp",
   ]
 
-  include_dirs = [ "src" ]
+  include_dirs = [
+    "src",
+    "deps/happyhttp",
+  ]
 
   deps = [
     ":confirmations",

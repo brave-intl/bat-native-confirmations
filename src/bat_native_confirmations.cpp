@@ -3,11 +3,43 @@
 #include "confirmations.hpp"
 #include "base/guid.h"
 
+#include "happyhttp.h"
+
 using namespace challenge_bypass_ristretto;
 using namespace bat_native_confirmations;
 
-int main() {
+static int count=0;
 
+void OnBegin( const happyhttp::Response* r, void* userdata )
+{
+    // printf("BEGIN (%d %s)\n", r->getstatus(), r->getreason() );
+    count = 0;
+}
+
+void OnData( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n )
+{
+    fwrite( data,1,n, stdout );
+    count += n;
+}
+
+void OnComplete( const happyhttp::Response* r, void* userdata )
+{
+    // printf("COMPLETE (%d bytes)\n", count );
+}
+
+void test() {
+  happyhttp::Connection conn( "ads-serve.bravesoftware.com", 80 );
+  conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+  conn.request( "GET", "/v1/catalog" );
+
+  while( conn.outstanding() )
+      conn.pump();
+
+  // we should extract the json key `issuers`, save it versioned using issuersVersion and fabricate a version if we don't have one
+}
+
+int main() {
   //  Client's role, from protocol-flow.png:
   //
   //  Fetching (1)
@@ -42,7 +74,7 @@ int main() {
   std::string mock_confirmation_proof;
   std::string mock_payment_proof;
 
-  // TODO process these mock calls into real(+mock?) endpoints for bat-native-ads
+  bool use_server = true;
 
   // TODO we should pr. do this as multiple queues, unprocessed vs. processed 
   //      this is sort of dependent on the strategy we use for tagging them from the server...
@@ -155,6 +187,12 @@ int main() {
     // TODO actually, on success we pop payments equal to # retrieved, not just first:
     //conf_client.popFrontPayment();
     conf_client.mutex.unlock();
+  }
+
+
+  if (use_server) {
+    test();
+    // conf_client.test();
   }
 
   return 0;

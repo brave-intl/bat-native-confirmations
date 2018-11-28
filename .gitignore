@@ -1,4 +1,4 @@
-deps/*
+deps/challenge-bypass-ristretto-ffi
 build/*
 .vscode/*
 .gn
