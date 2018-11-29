@@ -15,7 +15,11 @@ namespace bat_native_confirmations {
     const size_t low_token_threshold = 2; // 20 
     const size_t refill_amount = 1 * low_token_threshold; // 5
 
-    std::string server_confirmations_key;
+    std::string issuers_version = "0"; // if unset or "0", assume we haven't gotten one
+    std::string server_confirmation_key;
+    std::string server_payment_key;
+    std::vector<std::string> server_bat_payment_names;
+    std::vector<std::string> server_bat_payment_keys;
 
     std::vector<std::string>       original_confirmation_tokens;
     std::vector<std::string>        blinded_confirmation_tokens;
@@ -32,7 +36,10 @@ namespace bat_native_confirmations {
 
     ////////////////////////////////////////
     void test();
-    void step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string GHpair);
+    void step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair,
+                                                                    std::string payments_GH_pair,
+                                                                    std::vector<std::string> bat_names,
+                                                                    std::vector<std::string> bat_keys);
     void step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem();
     void step_2_4_storeTheSignedBlindedConfirmations(std::vector<std::string> server_signed_blinded_confirmations);
     void step_3_1a_unblindSignedBlindedConfirmations();

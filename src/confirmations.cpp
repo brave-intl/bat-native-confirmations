@@ -27,16 +27,24 @@ namespace bat_native_confirmations {
     // std::cout << "Confirmations::test works\n";
   }
 
-  void Confirmations::step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string GHpair) {
+  void Confirmations::step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair, std::string payments_GH_pair, std::vector<std::string> bat_names, std::vector<std::string> bat_keys) {
+    this->mutex.lock();
     // This (G,H) *pair* is exposed as a *single* string via the rust lib
     // G is the generator the server used in H, see next line
     // H, aka Y, is xG, the server's public key
     // These are both necessary for the DLEQ proof, but not useful elsewhere
     // These come back with the catalog from the server
     // Later we'll get an *array of pairs* for the payments side
-    this->server_confirmations_key = GHpair;
+    this->server_confirmation_key = confirmations_GH_pair;
+    this->server_payment_key = payments_GH_pair;
+    this->server_bat_payment_names = bat_names;
+    this->server_bat_payment_keys = bat_keys;
+
+    // for(auto x : bat_names) { std::cerr << "x: " << (x) << "\n"; }
+
     this->saveState();
-    std::cout << "step1.1 key: " << this->server_confirmations_key << std::endl;
+    std::cout << "step1.1 key: " << this->server_confirmation_key << std::endl;
+    this->mutex.unlock();
   }
 
   void Confirmations::step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem() {
@@ -231,7 +239,11 @@ namespace bat_native_confirmations {
   std::string Confirmations::toJSONString() {
     base::DictionaryValue dict;
      
-    dict.SetKey("server_confirmations_key", base::Value(server_confirmations_key));
+    dict.SetKey("issuers_version", base::Value(issuers_version));
+    dict.SetKey("server_confirmation_key", base::Value(server_confirmation_key));
+    dict.SetKey("server_payment_key", base::Value(server_payment_key));
+    dict.SetWithoutPathExpansion("server_bat_payment_names", munge(server_bat_payment_names));
+    dict.SetWithoutPathExpansion("server_bat_payment_keys", munge(server_bat_payment_keys));
     dict.SetWithoutPathExpansion("original_confirmation_tokens", munge(original_confirmation_tokens));
     dict.SetWithoutPathExpansion("blinded_confirmation_tokens", munge(blinded_confirmation_tokens));
     dict.SetWithoutPathExpansion("signed_blinded_confirmation_tokens", munge(signed_blinded_confirmation_tokens));
@@ -273,8 +285,20 @@ namespace bat_native_confirmations {
     // if (!(v = dict->FindKey(""))) return fail;
     // this->= v->GetString();
 
-    if (!(v = dict->FindKey("server_confirmations_key"))) return fail;
-    this->server_confirmations_key = v->GetString();
+    if (!(v = dict->FindKey("issuers_version"))) return fail;
+    this->issuers_version = v->GetString();
+
+    if (!(v = dict->FindKey("server_confirmation_key"))) return fail;
+    this->server_confirmation_key = v->GetString();
+
+    if (!(v = dict->FindKey("server_payment_key"))) return fail;
+    this->server_payment_key = v->GetString();
+
+    if (!(v = dict->FindKey("server_bat_payment_names"))) return fail;
+    this->server_bat_payment_names = unmunge(v);
+
+    if (!(v = dict->FindKey("server_bat_payment_keys"))) return fail;
+    this->server_bat_payment_keys = unmunge(v);
 
     if (!(v = dict->FindKey("original_confirmation_tokens"))) return fail;
     this->original_confirmation_tokens = unmunge(v);
@@ -314,7 +338,7 @@ namespace bat_native_confirmations {
     std::string json = toJSONString();
 
     assert(this->fromJSONString(json));
-    //this->server_confirmations_key = "bort";
+    //this->server_confirmation_key = "bort";
     std::string json2 = toJSONString();
     assert(json2 == json);
 

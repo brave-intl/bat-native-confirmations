@@ -1,24 +1,34 @@
 #include <iostream>
+#include <string>
+#include <regex>
 #include "wrapper.hpp"
 #include "confirmations.hpp"
 #include "base/guid.h"
 
 #include "happyhttp.h"
 
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
+
 using namespace challenge_bypass_ristretto;
 using namespace bat_native_confirmations;
 
+const char* BRAVE_AD_SERVER = "ads-serve.bravesoftware.com";
+int BRAVE_AD_SERVER_PORT = 80;
 static int count=0;
+static std::string happy_data; 
 
 void OnBegin( const happyhttp::Response* r, void* userdata )
 {
     // printf("BEGIN (%d %s)\n", r->getstatus(), r->getreason() );
     count = 0;
+    happy_data = "";
 }
 
 void OnData( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n )
 {
-    fwrite( data,1,n, stdout );
+    //fwrite( data,1,n, stdout );
+    happy_data.append((char *)data, (size_t)n);
     count += n;
 }
 
@@ -27,14 +37,11 @@ void OnComplete( const happyhttp::Response* r, void* userdata )
     // printf("COMPLETE (%d bytes)\n", count );
 }
 
-void test() {
-  happyhttp::Connection conn( "ads-serve.bravesoftware.com", 80 );
+void get_catalog() {
+  happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
   conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
-
   conn.request( "GET", "/v1/catalog" );
-
-  while( conn.outstanding() )
-      conn.pump();
+  while( conn.outstanding() ) conn.pump();
 
   // we should extract the json key `issuers`, save it versioned using issuersVersion and fabricate a version if we don't have one
   // we should key our version of the confirmations objects like this and have them saved as such
@@ -72,7 +79,11 @@ int main() {
   bat_native_confirmations::Confirmations conf_client;
   bat_native_confirmations::MockServer mock_server;
 
-  std::string mock_public_key = mock_server.public_key.encode_base64();
+  std::string mock_confirmations_public_key = mock_server.public_key.encode_base64();
+  std::string mock_payments_public_key = mock_confirmations_public_key; // hack. mock server only has 1 key for now
+  std::vector<std::string> mock_bat_names = {"0.00BAT", "0.01BAT", "0.02BAT"};
+  std::vector<std::string> mock_bat_keys  = {mock_payments_public_key, mock_payments_public_key, mock_payments_public_key}; // hack
+
   std::vector<std::string> mock_sbc;
   std::string mock_worth = "mock_pub_key_for_lookup_in_catalog";
   std::vector<std::string> mock_sbp;
@@ -80,18 +91,81 @@ int main() {
   std::string mock_confirmation_proof;
   std::string mock_payment_proof;
 
-  bool use_server = true;
+  bool test_with_server = true;
 
   // TODO we should pr. do this as multiple queues, unprocessed vs. processed 
   //      this is sort of dependent on the strategy we use for tagging them from the server...
 
+  if (test_with_server) {
+    get_catalog();
+    // std::cout << "happy_data: " <<  happy_data << "\n";
 
-  // TODO: this will get called by bat-native-ads whenever it downloads the ad catalog w/ keys
-  {
-    conf_client.mutex.lock();
-    conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(mock_public_key);
-    conf_client.mutex.unlock();
+    std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
+    base::DictionaryValue* dict;
+    if (!value->GetAsDictionary(&dict)) {
+      std::cout << "no dict" << "\n";
+      abort();
+    }
+
+    base::Value *v;
+    if (!(v = dict->FindKey("issuers"))) {
+      std::cout << "could not get issuers\n";
+      abort();
+    }
+
+    base::ListValue list(v->GetList());
+
+    mock_bat_names = {};
+    mock_bat_keys = {};
+ 
+    for (size_t i = 0; i < list.GetSize(); i++) {
+      // std::cerr << "i: " << (i) << "\n";
+      base::Value *x;
+      list.Get(i, &x);
+      //v.push_back(x->GetString());
+      base::DictionaryValue* d;
+      if (!x->GetAsDictionary(&d)) {
+        std::cout << "no dict x/d" << "\n";
+        abort();
+      }
+      base::Value *a;
+      
+      if (!(a = d->FindKey("name"))) {
+        std::cerr << "no name\n";
+        abort();
+      }
+
+      std::string name = a->GetString();
+
+      if (!(a = d->FindKey("publicKey"))) {
+        std::cerr << "no pubkey\n";
+        abort();
+      }
+
+      std::string pubkey = a->GetString();
+
+      std::regex bat_regex("\\d\\.\\d\\dBAT"); // eg, "1.23BAT"
+
+      // std::cerr << "name: " << (name) << " pubkey: " << (pubkey) << "\n";
+
+      if (name == "confirmation") {
+        mock_confirmations_public_key = pubkey; 
+      } else if (name == "payment") {
+        mock_payments_public_key = pubkey; 
+      } else if (std::regex_match(name, bat_regex) ) {
+        mock_bat_names.push_back(name);
+        mock_bat_keys.push_back(pubkey);
+      }
+    }
+
+    //so now all our mock data is ready to go for step_1_1 below (it's populated with the return from the server)
   }
+
+  // TODO: this will get called by bat-native-ads when it downloads the ad catalog w/ keys (once only for now?)
+  {
+    conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(mock_confirmations_public_key, mock_payments_public_key, mock_bat_names, mock_bat_keys);
+  }
+
 
 
   // TODO this should happen on launch and on loop (timer), in the background
@@ -114,7 +188,7 @@ int main() {
     bool verified = conf_client.verifyBatchDLEQProof(mock_confirmation_proof, 
                                                      conf_client.blinded_confirmation_tokens,
                                                      conf_client.signed_blinded_confirmation_tokens,
-                                                     mock_public_key);
+                                                     mock_confirmations_public_key);
     if (!verified) {
       //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
       std::cerr << "ERROR: Confirmations proof invalid" << std::endl;
@@ -170,7 +244,7 @@ int main() {
     bool verified = conf_client.verifyBatchDLEQProof(mock_payment_proof, 
                                                      conf_client.blinded_payment_tokens,
                                                      conf_client.signed_blinded_payment_tokens,
-                                                     mock_public_key);
+                                                     mock_payments_public_key);
     if (!verified) {
       //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
       std::cerr << "ERROR: Payment proof invalid" << std::endl;
@@ -193,12 +267,6 @@ int main() {
     // TODO actually, on success we pop payments equal to # retrieved, not just first:
     //conf_client.popFrontPayment();
     conf_client.mutex.unlock();
-  }
-
-
-  if (use_server) {
-    test();
-    // conf_client.test();
   }
 
   return 0;
