@@ -27,6 +27,11 @@ namespace bat_native_confirmations {
     // std::cout << "Confirmations::test works\n";
   }
 
+
+  bool Confirmations::confirmations_ready_for_ad_showing() {
+    return (blinded_confirmation_tokens.size() > 0);
+  }
+
   void Confirmations::step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair, std::string payments_GH_pair, std::vector<std::string> bat_names, std::vector<std::string> bat_keys) {
     this->mutex.lock();
     // This (G,H) *pair* is exposed as a *single* string via the rust lib

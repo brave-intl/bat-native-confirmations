@@ -17,7 +17,7 @@ namespace bat_native_confirmations {
 
     std::string issuers_version = "0"; // if unset or "0", assume we haven't gotten one
     std::string server_confirmation_key;
-    std::string server_payment_key;
+    std::string server_payment_key; // per amir,evq, this key isn't even supposed to exist
     std::vector<std::string> server_bat_payment_names;
     std::vector<std::string> server_bat_payment_keys;
 
@@ -36,6 +36,7 @@ namespace bat_native_confirmations {
 
     ////////////////////////////////////////
     void test();
+    bool confirmations_ready_for_ad_showing();
     void step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair,
                                                                     std::string payments_GH_pair,
                                                                     std::vector<std::string> bat_names,

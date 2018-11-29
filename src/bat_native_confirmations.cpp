@@ -91,10 +91,9 @@ int main() {
   std::string mock_confirmation_proof;
   std::string mock_payment_proof;
 
-  bool test_with_server = true;
+  std::string mock_wallet_address = "ed89e4cb-2a66-454a-8276-1d167c2a44fa"; // aka paymentId or payment_id
 
-  // TODO we should pr. do this as multiple queues, unprocessed vs. processed 
-  //      this is sort of dependent on the strategy we use for tagging them from the server...
+  bool test_with_server = true;
 
   if (test_with_server) {
     get_catalog();
@@ -151,6 +150,7 @@ int main() {
       if (name == "confirmation") {
         mock_confirmations_public_key = pubkey; 
       } else if (name == "payment") {
+        // per amir, evq, we're not actually using this! so it's not supposed to be appearing in the catalog return but is
         mock_payments_public_key = pubkey; 
       } else if (std::regex_match(name, bat_regex) ) {
         mock_bat_names.push_back(name);
@@ -161,22 +161,44 @@ int main() {
     //so now all our mock data is ready to go for step_1_1 below (it's populated with the return from the server)
   }
 
-  // TODO: this will get called by bat-native-ads when it downloads the ad catalog w/ keys (once only for now?)
+  // TODO: hook up into brave-core client / bat-native-ads: populate mock_wallet_address with real wallet address
+  // mock_wallet_address = ... ;
+
+  // TODO: hook up into brave-core client / bat-native-ads: this will get called by bat-native-ads when it downloads the ad catalog w/ keys (once only for now?)
+  // NOTE: this call can block! it waits on a mutex to unlock. generally all these `step_#_#` calls will
   {
     conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(mock_confirmations_public_key, mock_payments_public_key, mock_bat_names, mock_bat_keys);
   }
 
-
-
-  // TODO this should happen on launch and on loop (timer), in the background
-  // TODO we'll need to not show ads whenever we're out of tokens
+  // TODO: hook up into brave-core client / bat-native-ads: this should happen on launch (in the background) and on loop/timer (in the background)
+  // TODO: hook up into brave-core client / bat-native-ads: we'll need to not show ads whenever we're out of tokens use: conf_client.confirmations_ready_for_ad_showing(); to test
   {
+
+//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
     conf_client.mutex.lock();
     conf_client.step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem();
 
     // TODO step_2_2 POST the tokens via client
+    // TODO          POST: on inet failure, retry or cleanup & unlock
+    {
+      happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+      conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+      // /v1/confirmation/token/{payment_id}
+      std::string endpoint = std::string("/v1/confirmation/token/").append(mock_wallet_address);
+
+      conn.request("POST", endpoint.c_str());
+      while( conn.outstanding() ) conn.pump();
+
+      std::cerr << "POST response: " << (happy_data) << "\n";
+    }
+
     // TODO step_2_3 GET the returned values
-    // TODO 2x, on inet failure, retry or cleanup & unlock
+    // TODO          GET: on inet failure, retry or cleanup & unlock
+    {
+
+    }
 
 
     mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_confirmation_tokens);
@@ -198,6 +220,7 @@ int main() {
 
     conf_client.mutex.unlock();
   }
+
 
 
   // reporting ad viewed
