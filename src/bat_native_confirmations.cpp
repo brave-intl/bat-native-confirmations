@@ -37,6 +37,12 @@ void test() {
       conn.pump();
 
   // we should extract the json key `issuers`, save it versioned using issuersVersion and fabricate a version if we don't have one
+  // we should key our version of the confirmations objects like this and have them saved as such
+  // (make a new obj for each version, maybe have a bool func that states whether it has confirmations to redeem or not)
+  // if a newer version has been seen, then any lower version #'d object can be retired after it's been allowed to redeem everything,
+  // ie, you pump it until it returns false when asked if it has in-progress items to redeem
+  // so we should control how confirmations objects get created, via constructor or something, and how they're saved
+  // maybe we should just punt on all of this for now and require them not to rev the keys yet
 }
 
 int main() {
@@ -110,7 +116,7 @@ int main() {
                                                      conf_client.signed_blinded_confirmation_tokens,
                                                      mock_public_key);
     if (!verified) {
-      //TODO Fail
+      //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
       std::cerr << "ERROR: Confirmations proof invalid" << std::endl;
     }
 
@@ -166,7 +172,7 @@ int main() {
                                                      conf_client.signed_blinded_payment_tokens,
                                                      mock_public_key);
     if (!verified) {
-      //TODO Fail
+      //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
       std::cerr << "ERROR: Payment proof invalid" << std::endl;
     }
 
