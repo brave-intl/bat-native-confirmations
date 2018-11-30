@@ -63,7 +63,10 @@ namespace bat_native_confirmations {
     bool fromJSONString(std::string json);
     std::vector<std::string> unmunge(base::Value *value);
 
+    // these functions are copy-pasta from the ledger library and in the future should be refactored somehow.
     std::string sign(std::string* keys, std::string* values, const unsigned int& size, const std::string& keyId, const std::vector<uint8_t>& secretKey);
+    std::vector<uint8_t> getSHA256(const std::string& in);
+    std::string getBase64(const std::vector<uint8_t>& in);
 
     Confirmations();
     ~Confirmations();

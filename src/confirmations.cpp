@@ -29,7 +29,7 @@ namespace bat_native_confirmations {
 
 
   bool Confirmations::confirmations_ready_for_ad_showing() {
-    return (blinded_confirmation_tokens.size() > 0);
+    return (unblinded_signed_confirmation_token.size() > 0);
   }
 
   void Confirmations::step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair, std::string payments_GH_pair, std::vector<std::string> bat_names, std::vector<std::string> bat_keys) {
@@ -472,6 +472,29 @@ namespace bat_native_confirmations {
 
      return "keyId=\"" + keyId + "\",algorithm=\"" + CONFIRMATIONS_SIGNATURE_ALGORITHM +
        "\",headers=\"" + headers + "\",signature=\"" + getBase64(signature) + "\"";
+  }
+
+
+  std::vector<uint8_t> Confirmations::getSHA256(const std::string& in) {
+    std::vector<uint8_t> res(SHA256_DIGEST_LENGTH);
+    SHA256((uint8_t*)in.c_str(), in.length(), &res.front());
+    return res;
+  }
+
+  std::string Confirmations::getBase64(const std::vector<uint8_t>& in) {
+    std::string res;
+    size_t size = 0;
+    if (!EVP_EncodedLength(&size, in.size())) {
+      DCHECK(false);
+      LOG(ERROR) << "EVP_EncodedLength failure in getBase64";
+
+      return "";
+    }
+    std::vector<uint8_t> out(size);
+    int numEncBytes = EVP_EncodeBlock(&out.front(), &in.front(), in.size());
+    DCHECK(numEncBytes != 0);
+    res = (char*)&out.front();
+    return res;
   }
 
 }

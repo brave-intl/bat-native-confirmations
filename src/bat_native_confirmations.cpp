@@ -92,6 +92,7 @@ int main() {
   std::string mock_payment_proof;
 
   std::string mock_wallet_address = "ed89e4cb-2a66-454a-8276-1d167c2a44fa"; // aka paymentId or payment_id
+  std::string mock_wallet_address_secret_key = "56fe77e2a5b2fa3339fe13944856c901cbd926932e0b17257d2f1b03fe15441a2c7420280292d383eed24ba50ca0a3dd03e8fba6871d46f8557b35b6dc367aca";
 
   bool test_with_server = true;
 
@@ -217,6 +218,8 @@ int main() {
     }
 
     // TODO should we simply unblind signed tokens on receipt instead of waiting?
+    //      we probably should
+    //      we have to now basically because confirmations_ready_for_ad_showing now hinges on this
 
     conf_client.mutex.unlock();
   }
