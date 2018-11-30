@@ -1,10 +1,10 @@
 #include <iostream>
 #include <string>
 #include <regex>
+#include <cstdlib>
 #include "wrapper.hpp"
 #include "confirmations.hpp"
 #include "base/guid.h"
-
 #include "happyhttp.h"
 
 #include "base/json/json_reader.h"
@@ -76,6 +76,8 @@ int main() {
   //    5.1 pop signed-blinded-payment, PUT /.../tokens/{paymentId}
   //    5.2 store transactionIds + payment
 
+  bool test_with_server = true;
+
   bat_native_confirmations::Confirmations conf_client;
   bat_native_confirmations::MockServer mock_server;
 
@@ -94,7 +96,9 @@ int main() {
   std::string mock_wallet_address = "ed89e4cb-2a66-454a-8276-1d167c2a44fa"; // aka paymentId or payment_id
   std::string mock_wallet_address_secret_key = "56fe77e2a5b2fa3339fe13944856c901cbd926932e0b17257d2f1b03fe15441a2c7420280292d383eed24ba50ca0a3dd03e8fba6871d46f8557b35b6dc367aca";
 
-  bool test_with_server = true;
+  std::string mock_body_22 = "{\"blindedTokens\":[\"lNcLBep59zi5zMWD3s3gT7WpgLPlM7n0YiCD2jdkMlc=\"]}";
+  std::string mock_body_sha_256 = "MGyHkaktkuGfmopz+uljkmapS0zLwBB9GJNp68kqVzM=";
+  std::string mock_signature_22 = "V+paOGZm0OU36hJCr7BrR49OlMpOiuaGC2DeXXwBWlKU88FXA/MOv5gwl/MqQPHWX5RA1+9YDb/6g6FEcsYnAw==";
 
   if (test_with_server) {
     get_catalog();
@@ -193,6 +197,31 @@ int main() {
       while( conn.outstanding() ) conn.pump();
 
       std::cerr << "POST response: " << (happy_data) << "\n";
+
+
+      std::vector<uint8_t> dat = conf_client.getSHA256(mock_body_22);
+      std::string b64 = conf_client.getBase64(dat);
+      std::cerr << "b64: " << (b64) << "\n";
+      DCHECK(b64 == mock_body_sha_256);
+
+
+       //convert std::string of hex to vector<uint8_t>
+       std::string m = mock_wallet_address_secret_key;
+       std::vector<uint8_t> skey;
+       size_t len = m.length();
+       for(size_t i = 0; i < len; i += 2) {
+           std::string a =  m.substr(i, 2);
+           uint8_t x = std::strtol(a.c_str(),0,16);
+           skey.push_back(x);
+       }
+
+      std::string digest = "digest";
+      std::string mock_sha = std::string("SHA-256=").append(mock_body_sha_256);
+
+      std::string signature_field = conf_client.sign(&digest, &mock_sha, 1, "primary",skey);
+      std::cerr << "signature_field: " << (signature_field) << "\n";
+      DCHECK( signature_field.find(mock_signature_22) != std::string::npos);
+      exit(0);
     }
 
     // TODO step_2_3 GET the returned values
