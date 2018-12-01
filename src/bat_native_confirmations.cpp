@@ -100,6 +100,10 @@ int main() {
   std::string mock_body_sha_256 = "MGyHkaktkuGfmopz+uljkmapS0zLwBB9GJNp68kqVzM=";
   std::string mock_signature_22 = "V+paOGZm0OU36hJCr7BrR49OlMpOiuaGC2DeXXwBWlKU88FXA/MOv5gwl/MqQPHWX5RA1+9YDb/6g6FEcsYnAw==";
 
+  // TODO: fill in : hook up into brave-core client / bat-native-ads: populate mock_wallet_address with real wallet address
+  std::string real_wallet_address = mock_wallet_address; // XXX TODO
+  std::string real_wallet_address_secret_key = mock_wallet_address_secret_key; // XXX TODO
+
   if (test_with_server) {
     get_catalog();
     // std::cout << "happy_data: " <<  happy_data << "\n";
@@ -166,9 +170,6 @@ int main() {
     //so now all our mock data is ready to go for step_1_1 below (it's populated with the return from the server)
   }
 
-  // TODO: hook up into brave-core client / bat-native-ads: populate mock_wallet_address with real wallet address
-  // mock_wallet_address = ... ;
-
   // TODO: hook up into brave-core client / bat-native-ads: this will get called by bat-native-ads when it downloads the ad catalog w/ keys (once only for now?)
   // NOTE: this call can block! it waits on a mutex to unlock. generally all these `step_#_#` calls will
   {
@@ -187,40 +188,81 @@ int main() {
     // TODO step_2_2 POST the tokens via client
     // TODO          POST: on inet failure, retry or cleanup & unlock
     {
+      std::string digest = "digest";
+      std::string primary = "primary";
+
+      /////////////////////////////////////////////////////////////////////////////
+      std::vector<uint8_t> mock_dat = conf_client.getSHA256(mock_body_22);
+      std::string mock_b64 = conf_client.getBase64(mock_dat);
+      DCHECK(mock_b64 == mock_body_sha_256);
+
+      std::vector<uint8_t> mock_skey = conf_client.rawDataBytesVectorFromASCIIHexString(mock_wallet_address_secret_key);
+
+      std::string mock_sha = std::string("SHA-256=").append(mock_body_sha_256);
+
+      std::string mock_signature_field = conf_client.sign(&digest, &mock_sha, 1, primary, mock_skey);
+      std::cerr << "mock_signature_field: " << (mock_signature_field) << "\n";
+      DCHECK( mock_signature_field.find(mock_signature_22) != std::string::npos);
+      /////////////////////////////////////////////////////////////////////////////
+      
+
+      /////////////////////////////////////////////////////////////////////////////
+      std::string build = "";
+
+      build.append("{\"blindedTokens\":");
+      build.append("[");
+      std::vector<std::string> a = conf_client.blinded_confirmation_tokens;
+
+      for(size_t i = 0; i < a.size(); i++) {
+        if(i > 0) {
+          build.append(",");
+        }
+        build.append("\"");
+        build.append(a[i]);
+        build.append("\"");
+      }
+
+      build.append("]");
+      build.append("}");
+
+      std::string real_body = build;
+
+      std::vector<uint8_t> real_sha_raw = conf_client.getSHA256(real_body);
+      std::string real_body_sha_256_b64 = conf_client.getBase64(real_sha_raw);
+
+      std::vector<uint8_t> real_skey = conf_client.rawDataBytesVectorFromASCIIHexString(real_wallet_address_secret_key);
+
+      std::string real_sha_value = std::string("SHA-256=").append(real_body_sha_256_b64);
+
+      std::string real_signature_field = conf_client.sign(&digest, &real_sha_value, 1, primary, real_skey);
+      std::cerr << "real_signature_field: " << (real_signature_field) << "\n";
+      /////////////////////////////////////////////////////////////////////////////
+
+
+
       happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
       conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
 
       // /v1/confirmation/token/{payment_id}
-      std::string endpoint = std::string("/v1/confirmation/token/").append(mock_wallet_address);
+      std::string endpoint = std::string("/v1/confirmation/token/").append(real_wallet_address);
 
-      conn.request("POST", endpoint.c_str());
+      //conn.request("POST", endpoint.c_str());
+
+      const char * h[] = {"digest", (const char *) real_sha_value.c_str(), 
+                          "signature", (const char *) real_signature_field.c_str(), 
+                          "accept", "application/json",
+                          "Content-Type", "application/json",
+                          NULL };
+
+      conn.request("POST", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
+std::cerr << "real_body: " << (real_body) << "\n";
+
       while( conn.outstanding() ) conn.pump();
 
       std::cerr << "POST response: " << (happy_data) << "\n";
 
+      //TODO this should be the `nonce` in the return. we need to make sure we get the nonce in the separate request  
 
-      std::vector<uint8_t> dat = conf_client.getSHA256(mock_body_22);
-      std::string b64 = conf_client.getBase64(dat);
-      std::cerr << "b64: " << (b64) << "\n";
-      DCHECK(b64 == mock_body_sha_256);
-
-
-       //convert std::string of hex to vector<uint8_t>
-       std::string m = mock_wallet_address_secret_key;
-       std::vector<uint8_t> skey;
-       size_t len = m.length();
-       for(size_t i = 0; i < len; i += 2) {
-           std::string a =  m.substr(i, 2);
-           uint8_t x = std::strtol(a.c_str(),0,16);
-           skey.push_back(x);
-       }
-
-      std::string digest = "digest";
-      std::string mock_sha = std::string("SHA-256=").append(mock_body_sha_256);
-
-      std::string signature_field = conf_client.sign(&digest, &mock_sha, 1, "primary",skey);
-      std::cerr << "signature_field: " << (signature_field) << "\n";
-      DCHECK( signature_field.find(mock_signature_22) != std::string::npos);
       exit(0);
     }
 

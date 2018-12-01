@@ -497,4 +497,16 @@ namespace bat_native_confirmations {
     return res;
   }
 
+  std::vector<uint8_t> Confirmations::rawDataBytesVectorFromASCIIHexString(std::string ascii) {
+    std::vector<uint8_t> bytes;
+    size_t len = ascii.length();
+    for(size_t i = 0; i < len; i += 2) {
+        std::string b =  ascii.substr(i, 2);
+        uint8_t x = std::strtol(b.c_str(),0,16);
+        bytes.push_back(x);
+    }
+    return bytes;
+  }
+
+
 }
