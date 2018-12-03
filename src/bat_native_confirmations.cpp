@@ -410,13 +410,16 @@ int main() {
     VerificationKey client_vKey = restored_unblinded_token.derive_verification_key();
     std::string message = json;
     VerificationSignature client_sig = client_vKey.sign(message);
+
+
+    std::string base64_token_preimage = restored_unblinded_token.preimage().encode_base64();
     std::string base64_signature = client_sig.encode_base64();
 
     base::DictionaryValue bundle;
     std::string credential_json;
     bundle.SetKey("payload", base::Value(json));
     bundle.SetKey("signature", base::Value(base64_signature));
-    bundle.SetKey("t", base::Value(usct));
+    bundle.SetKey("t", base::Value(base64_token_preimage));
     base::JSONWriter::Write(bundle, &credential_json);
 
 std::cerr << "credential_json: " << (credential_json) << "\n";
