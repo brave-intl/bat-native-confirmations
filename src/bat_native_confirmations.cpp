@@ -103,6 +103,9 @@ int main() {
   // TODO: fill in : hook up into brave-core client / bat-native-ads: populate mock_wallet_address with real wallet address
   std::string real_wallet_address = mock_wallet_address; // XXX TODO
   std::string real_wallet_address_secret_key = mock_wallet_address_secret_key; // XXX TODO
+  // This is stored on the conf_client as server_confirmation_key server_payment_key
+  std::string real_confirmations_public_key = mock_confirmations_public_key;
+  std::string real_payments_public_key = mock_payments_public_key;
 
   if (test_with_server) {
     get_catalog();
@@ -157,10 +160,10 @@ int main() {
       // std::cerr << "name: " << (name) << " pubkey: " << (pubkey) << "\n";
 
       if (name == "confirmation") {
-        mock_confirmations_public_key = pubkey; 
+        real_confirmations_public_key = pubkey; 
       } else if (name == "payment") {
         // per amir, evq, we're not actually using this! so it's not supposed to be appearing in the catalog return but is
-        mock_payments_public_key = pubkey; 
+        real_payments_public_key = pubkey; 
       } else if (std::regex_match(name, bat_regex) ) {
         mock_bat_names.push_back(name);
         mock_bat_keys.push_back(pubkey);
@@ -173,7 +176,7 @@ int main() {
   // TODO: hook up into brave-core client / bat-native-ads: this will get called by bat-native-ads when it downloads the ad catalog w/ keys (once only for now?)
   // NOTE: this call can block! it waits on a mutex to unlock. generally all these `step_#_#` calls will
   {
-    conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(mock_confirmations_public_key, mock_payments_public_key, mock_bat_names, mock_bat_keys);
+    conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(real_confirmations_public_key, real_payments_public_key, mock_bat_names, mock_bat_keys);
   }
 
   // TODO: hook up into brave-core client / bat-native-ads: this should happen on launch (in the background) and on loop/timer (in the background)
@@ -201,7 +204,7 @@ int main() {
       std::string mock_sha = std::string("SHA-256=").append(mock_body_sha_256);
 
       std::string mock_signature_field = conf_client.sign(&digest, &mock_sha, 1, primary, mock_skey);
-      std::cerr << "mock_signature_field: " << (mock_signature_field) << "\n";
+      // std::cerr << "mock_signature_field: " << (mock_signature_field) << "\n";
       DCHECK( mock_signature_field.find(mock_signature_22) != std::string::npos);
       /////////////////////////////////////////////////////////////////////////////
       
@@ -232,10 +235,10 @@ int main() {
 
       std::vector<uint8_t> real_skey = conf_client.rawDataBytesVectorFromASCIIHexString(real_wallet_address_secret_key);
 
-      std::string real_sha_value = std::string("SHA-256=").append(real_body_sha_256_b64);
+      std::string real_digest_field = std::string("SHA-256=").append(real_body_sha_256_b64);
 
-      std::string real_signature_field = conf_client.sign(&digest, &real_sha_value, 1, primary, real_skey);
-      std::cerr << "real_signature_field: " << (real_signature_field) << "\n";
+      std::string real_signature_field = conf_client.sign(&digest, &real_digest_field, 1, primary, real_skey);
+      // std::cerr << "real_signature_field: " << (real_signature_field) << "\n";
       /////////////////////////////////////////////////////////////////////////////
 
 
@@ -246,9 +249,7 @@ int main() {
       // /v1/confirmation/token/{payment_id}
       std::string endpoint = std::string("/v1/confirmation/token/").append(real_wallet_address);
 
-      //conn.request("POST", endpoint.c_str());
-
-      const char * h[] = {"digest", (const char *) real_sha_value.c_str(), 
+      const char * h[] = {"digest", (const char *) real_digest_field.c_str(), 
                           "signature", (const char *) real_signature_field.c_str(), 
                           "accept", "application/json",
                           "Content-Type", "application/json",
@@ -259,48 +260,135 @@ std::cerr << "real_body: " << (real_body) << "\n";
 
       while( conn.outstanding() ) conn.pump();
 
-      std::cerr << "POST response: " << (happy_data) << "\n";
+      std::string post_resp = happy_data;
+      std::cerr << "resp: " << (post_resp) << "\n";
 
       //TODO this should be the `nonce` in the return. we need to make sure we get the nonce in the separate request  
+      //observation. seems like we should move all of this (the tokens in-progress) data to a map keyed on the nonce, and then
+      //step the storage through (pump) in a state-wise (dfa) as well, so the storage types are coded (named) on a dfa-state-respecting basis
+      
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(post_resp));
+      base::DictionaryValue* dict;
+      if (!value->GetAsDictionary(&dict)) {
+        std::cout << "2.2 post resp: no dict" << "\n";
+        abort();
+      }
 
-      exit(0);
+      base::Value *v;
+      if (!(v = dict->FindKey("nonce"))) {
+        std::cout << "2.2 no nonce\n";
+        abort();
+      }
+
+      conf_client.nonce = v->GetString();
+      std::cerr << "nonce: " << (conf_client.nonce) << "\n";
+
+        //STEP 2.3
+        // TODO this is done blocking and assumes success but we need to separate it more and account for the possibility of failures
+        // TODO GET: on inet failure, retry or cleanup & unlock
+        { 
+          //conn.request("GET", endpoint.c_str());
+          happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+          conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+          // /v1/confirmation/token/{payment_id}
+          std::string endpoint = std::string("/v1/confirmation/token/").append(real_wallet_address).append("?nonce=").append(conf_client.nonce);
+
+          conn.request("GET", endpoint.c_str()  ); // h, (const unsigned char *)real_body.c_str(), real_body.size());
+
+          while( conn.outstanding() ) conn.pump();
+          std::string get_resp = happy_data;
+
+          /////////////////////////////////////////////////////////
+          mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_confirmation_tokens);
+          mock_sbc = mock_server.signed_tokens;
+          mock_confirmation_proof = mock_server.batch_dleq_proof;
+
+          conf_client.step_2_4_storeTheSignedBlindedConfirmations(mock_sbc);
+
+          bool mock_verified = conf_client.verifyBatchDLEQProof(mock_confirmation_proof, 
+                                                          conf_client.blinded_confirmation_tokens,
+                                                          conf_client.signed_blinded_confirmation_tokens,
+                                                          mock_confirmations_public_key);
+          if (!mock_verified) {
+            //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
+            std::cerr << "ERROR: Mock confirmations proof invalid" << std::endl;
+          }
+          /////////////////////////////////////////////////////////
+
+
+          /////////////////////////////////////////////////////////
+
+          // happy_data: {"batchProof":"r2qx2h5ENHASgBxEhN2TjUjtC2L2McDN6g/lZ+nTaQ6q+6TZH0InhxRHIp0vdUlSbMMCHaPdLYsj/IJbseAtCw==","signedTokens":["VI27MCax4V9Gk60uC1dwCHHExHN2WbPwwlJk87fYAyo=","mhFmcWHLk5X8v+a/X0aea24OfGWsfAwWbP7RAeXXLV4="]}
+
+          std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
+          base::DictionaryValue* dict;
+          if (!value->GetAsDictionary(&dict)) {
+            std::cout << "2.3 get resp: no dict" << "\n";
+            abort();
+          }
+
+          base::Value *v;
+
+          if (!(v = dict->FindKey("batchProof"))) {
+            std::cout << "2.3 no batchProof\n";
+            abort();
+          }
+
+          std::string real_batch_proof = v->GetString();
+std::cerr << "real_batch_proof: " << (real_batch_proof) << "\n";
+
+          if (!(v = dict->FindKey("signedTokens"))) {
+            std::cout << "2.3 no signedTokens\n";
+            abort();
+          }
+
+          base::ListValue list(v->GetList());
+
+          std::vector<std::string> real_server_sbc = {};
+
+          for (size_t i = 0; i < list.GetSize(); i++) {
+            base::Value *x;
+            list.Get(i, &x);
+
+            auto sbc = x->GetString();
+            // std::cerr << "sbc: " << (sbc) << "\n";
+
+            real_server_sbc.push_back(sbc);
+          }
+
+          mock_sbc = mock_server.signed_tokens;
+
+          conf_client.step_2_4_storeTheSignedBlindedConfirmations(real_server_sbc);
+
+          bool real_verified = conf_client.verifyBatchDLEQProof(real_batch_proof,
+                                                          conf_client.blinded_confirmation_tokens,
+                                                          conf_client.signed_blinded_confirmation_tokens,
+                                                          conf_client.server_confirmation_key);
+          if (!real_verified) {
+            //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
+            std::cerr << "ERROR: Server confirmations proof invalid" << std::endl;
+          }
+          /////////////////////////////////////////////////////////
+
+          // TODO should we simply unblind signed tokens on receipt instead of waiting?
+          //      we probably should
+          //      we have to now basically because confirmations_ready_for_ad_showing now hinges on this
+
+        }
+
     }
-
-    // TODO step_2_3 GET the returned values
-    // TODO          GET: on inet failure, retry or cleanup & unlock
-    {
-
-    }
-
-
-    mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_confirmation_tokens);
-    mock_sbc = mock_server.signed_tokens;
-    mock_confirmation_proof = mock_server.batch_dleq_proof;
-
-    conf_client.step_2_4_storeTheSignedBlindedConfirmations(mock_sbc);
-
-    bool verified = conf_client.verifyBatchDLEQProof(mock_confirmation_proof, 
-                                                     conf_client.blinded_confirmation_tokens,
-                                                     conf_client.signed_blinded_confirmation_tokens,
-                                                     mock_confirmations_public_key);
-    if (!verified) {
-      //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
-      std::cerr << "ERROR: Confirmations proof invalid" << std::endl;
-    }
-
-    // TODO should we simply unblind signed tokens on receipt instead of waiting?
-    //      we probably should
-    //      we have to now basically because confirmations_ready_for_ad_showing now hinges on this
 
     conf_client.mutex.unlock();
   }
-
-
 
   // reporting ad viewed
   {
     conf_client.mutex.lock();
     conf_client.step_3_1a_unblindSignedBlindedConfirmations();
+
+exit(0);
+
 
     conf_client.step_3_1b_generatePaymentTokenAndBlindIt();
 
@@ -338,13 +426,13 @@ std::cerr << "real_body: " << (real_body) << "\n";
 
     conf_client.step_4_2_storeSignedBlindedPaymentToken(mock_sbp_token);
 
-    bool verified = conf_client.verifyBatchDLEQProof(mock_payment_proof, 
+    bool mock_verified = conf_client.verifyBatchDLEQProof(mock_payment_proof, 
                                                      conf_client.blinded_payment_tokens,
                                                      conf_client.signed_blinded_payment_tokens,
                                                      mock_payments_public_key);
-    if (!verified) {
+    if (!mock_verified) {
       //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
-      std::cerr << "ERROR: Payment proof invalid" << std::endl;
+      std::cerr << "ERROR: Mock payment proof invalid" << std::endl;
     }
 
     conf_client.mutex.unlock();

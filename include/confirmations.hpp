@@ -35,6 +35,8 @@ namespace bat_native_confirmations {
     std::string payment_worth;
 
     ////////////////////////////////////////
+    std::string nonce;
+    ////////////////////////////////////////
     void test();
     bool confirmations_ready_for_ad_showing();
     void step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair,
