@@ -10,6 +10,9 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 
+#include "net/base/escape.h"
+#include "base/base64.h"
+
 using namespace challenge_bypass_ristretto;
 using namespace bat_native_confirmations;
 
@@ -100,6 +103,10 @@ int main() {
   std::string mock_body_sha_256 = "MGyHkaktkuGfmopz+uljkmapS0zLwBB9GJNp68kqVzM=";
   std::string mock_signature_22 = "V+paOGZm0OU36hJCr7BrR49OlMpOiuaGC2DeXXwBWlKU88FXA/MOv5gwl/MqQPHWX5RA1+9YDb/6g6FEcsYnAw==";
 
+  // TODO: fill in : hook up into brave-core client / bat-native-ads: populate creative instance id with real one
+  std::string mock_creative_instance_id = "6ca04e53-2741-4d62-acbb-e63336d7ed46";
+  std::string real_creative_instance_id = mock_creative_instance_id;
+
   // TODO: fill in : hook up into brave-core client / bat-native-ads: populate mock_wallet_address with real wallet address
   std::string real_wallet_address = mock_wallet_address; // XXX TODO
   std::string real_wallet_address_secret_key = mock_wallet_address_secret_key; // XXX TODO
@@ -130,7 +137,6 @@ int main() {
     mock_bat_keys = {};
  
     for (size_t i = 0; i < list.GetSize(); i++) {
-      // std::cerr << "i: " << (i) << "\n";
       base::Value *x;
       list.Get(i, &x);
       //v.push_back(x->GetString());
@@ -156,8 +162,6 @@ int main() {
       std::string pubkey = a->GetString();
 
       std::regex bat_regex("\\d\\.\\d\\dBAT"); // eg, "1.23BAT"
-
-      // std::cerr << "name: " << (name) << " pubkey: " << (pubkey) << "\n";
 
       if (name == "confirmation") {
         real_confirmations_public_key = pubkey; 
@@ -204,7 +208,6 @@ int main() {
       std::string mock_sha = std::string("SHA-256=").append(mock_body_sha_256);
 
       std::string mock_signature_field = conf_client.sign(&digest, &mock_sha, 1, primary, mock_skey);
-      // std::cerr << "mock_signature_field: " << (mock_signature_field) << "\n";
       DCHECK( mock_signature_field.find(mock_signature_22) != std::string::npos);
       /////////////////////////////////////////////////////////////////////////////
       
@@ -238,7 +241,6 @@ int main() {
       std::string real_digest_field = std::string("SHA-256=").append(real_body_sha_256_b64);
 
       std::string real_signature_field = conf_client.sign(&digest, &real_digest_field, 1, primary, real_skey);
-      // std::cerr << "real_signature_field: " << (real_signature_field) << "\n";
       /////////////////////////////////////////////////////////////////////////////
 
 
@@ -253,15 +255,13 @@ int main() {
                           "signature", (const char *) real_signature_field.c_str(), 
                           "accept", "application/json",
                           "Content-Type", "application/json",
-                          NULL };
+                          NULL, NULL };
 
       conn.request("POST", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
-std::cerr << "real_body: " << (real_body) << "\n";
 
       while( conn.outstanding() ) conn.pump();
 
       std::string post_resp = happy_data;
-      std::cerr << "resp: " << (post_resp) << "\n";
 
       //TODO this should be the `nonce` in the return. we need to make sure we get the nonce in the separate request  
       //observation. seems like we should move all of this (the tokens in-progress) data to a map keyed on the nonce, and then
@@ -281,7 +281,6 @@ std::cerr << "real_body: " << (real_body) << "\n";
       }
 
       conf_client.nonce = v->GetString();
-      std::cerr << "nonce: " << (conf_client.nonce) << "\n";
 
         //STEP 2.3
         // TODO this is done blocking and assumes success but we need to separate it more and account for the possibility of failures
@@ -336,7 +335,6 @@ std::cerr << "real_body: " << (real_body) << "\n";
           }
 
           std::string real_batch_proof = v->GetString();
-std::cerr << "real_batch_proof: " << (real_batch_proof) << "\n";
 
           if (!(v = dict->FindKey("signedTokens"))) {
             std::cout << "2.3 no signedTokens\n";
@@ -352,7 +350,6 @@ std::cerr << "real_batch_proof: " << (real_batch_proof) << "\n";
             list.Get(i, &x);
 
             auto sbc = x->GetString();
-            // std::cerr << "sbc: " << (sbc) << "\n";
 
             real_server_sbc.push_back(sbc);
           }
@@ -371,10 +368,6 @@ std::cerr << "real_batch_proof: " << (real_batch_proof) << "\n";
           }
           /////////////////////////////////////////////////////////
 
-          // TODO should we simply unblind signed tokens on receipt instead of waiting?
-          //      we probably should
-          //      we have to now basically because confirmations_ready_for_ad_showing now hinges on this
-
         }
 
     }
@@ -384,24 +377,88 @@ std::cerr << "real_batch_proof: " << (real_batch_proof) << "\n";
 
   // reporting ad viewed
   {
+    // TODO should we simply unblind signed tokens on receipt instead of waiting?
+    //      we probably should
+    //      we have to now basically because confirmations_ready_for_ad_showing now hinges on this
+
     conf_client.mutex.lock();
     conf_client.step_3_1a_unblindSignedBlindedConfirmations();
 
-exit(0);
-
-
     conf_client.step_3_1b_generatePaymentTokenAndBlindIt();
 
-    // TODO step_3_1c POST /.../{confirmationId}/{credential}, which is (t, MAC_(sk)(R))
+    // // what's `t`? unblinded_signed_confirmation_token
+    // std::cerr << "unblinded_signed_confirmation_token: " << (conf_client.unblinded_signed_confirmation_token) << "\n";
+    // // what's `MAC_{sk}(R)`? item from blinded_payment_tokens
+    // std::cerr << "blinded_payment_tokens: " << (conf_client.blinded_payment_tokens[0]) << "\n";
 
+    std::string usct = conf_client.unblinded_signed_confirmation_token;
+    std::string bpt = conf_client.blinded_payment_tokens[0];
+
+    std::string prePaymentToken = bpt; 
+
+    std::string json;
+    
+    // build body of POST request
+    base::DictionaryValue dict;
+    dict.SetKey("creativeInstanceId", base::Value(real_creative_instance_id));
+    dict.SetKey("payload", base::Value(base::Value::Type::DICTIONARY));
+    dict.SetKey("prePaymentToken", base::Value(prePaymentToken));
+    dict.SetKey("type", base::Value("landed"));
+    base::JSONWriter::Write(dict, &json);
+
+    UnblindedToken restored_unblinded_token = UnblindedToken::decode_base64(usct);
+    VerificationKey client_vKey = restored_unblinded_token.derive_verification_key();
+    std::string message = json;
+    VerificationSignature client_sig = client_vKey.sign(message);
+    std::string base64_signature = client_sig.encode_base64();
+
+    base::DictionaryValue bundle;
+    std::string credential_json;
+    bundle.SetKey("payload", base::Value(json));
+    bundle.SetKey("signature", base::Value(base64_signature));
+    bundle.SetKey("t", base::Value(usct));
+    base::JSONWriter::Write(bundle, &credential_json);
+
+std::cerr << "credential_json: " << (credential_json) << "\n";
+
+    std::vector<uint8_t> vec(credential_json.begin(), credential_json.end());
+    std::string b64_encoded_a = conf_client.getBase64(vec);
+
+    std::string b64_encoded;
+    base::Base64Encode(credential_json, &b64_encoded);
+
+    DCHECK(b64_encoded_a == b64_encoded);
+
+    std::string uri_encoded = net::EscapeQueryParamValue(b64_encoded, true);
+
+std::cerr << "uri_encoded: " << (uri_encoded) << "\n";
+
+    // 3 pieces we need for our POST request, 1 for URL, 1 for body, and 1 for URL that depends on body
     std::string confirmation_id = base::GenerateGUID();
-    std::string request_body = "";
-    std::string credential = "";
+    std::string real_body = json;
+    std::string credential = uri_encoded;
 
-    // what's `t`? unblinded_signed_confirmation_token
-    std::cerr << "unblinded_signed_confirmation_token: " << (conf_client.unblinded_signed_confirmation_token) << "\n";
-    // what's `MAC_{sk}(R)`? item from blinded_payment_tokens
-    std::cerr << "blinded_payment_tokens: " << (conf_client.blinded_payment_tokens[0]) << "\n";
+    ///////////////////////////////////////////////////////////////////////
+    // step_3_1c POST /v1/confirmation/{confirmation_id}/{credential}, which is (t, MAC_(sk)(R))
+    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+    std::string endpoint = std::string("/v1/confirmation/").append(confirmation_id).append("/").append(credential);
+std::cerr << "endpoint: " << (endpoint) << "\n";
+    
+    // -d "{ \"creativeInstanceId\": \"6ca04e53-2741-4d62-acbb-e63336d7ed46\", \"payload\": {}, \"prePaymentToken\": \"cgILwnP8ua+cZ+YHJUBq4h+U+mt6ip8lX9hzElHrSBg=\", \"type\": \"landed\" }"
+    const char * h[] = {
+                        "accept", "application/json",
+                        "Content-Type", "application/json",
+                        NULL, NULL };
+
+    conn.request("POST", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
+
+    while( conn.outstanding() ) conn.pump();
+    std::string post_resp = happy_data;
+std::cerr << "post_resp: " << (post_resp) << "\n";
+    ///////////////////////////////////////////////////////////////////////
+exit(0);
 
     // TODO on success, pop fronts: 
     conf_client.popFrontConfirmation();
@@ -416,7 +473,7 @@ exit(0);
   // retrieve payment IOU
   {
     conf_client.mutex.lock();
-    // TODO step_4_1 GET /.../tokens/{paymentId}
+    // TODO GET /v1/confirmation/{confirmation_id}/paymentToken
     // TODO on inet failure, retry or cleanup & unlock
 
     mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_payment_tokens);

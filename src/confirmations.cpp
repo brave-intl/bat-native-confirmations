@@ -29,6 +29,7 @@ namespace bat_native_confirmations {
 
 
   bool Confirmations::confirmations_ready_for_ad_showing() {
+    // TODO this isn't right
     return (unblinded_signed_confirmation_token.size() > 0);
   }
 
@@ -432,22 +433,6 @@ namespace bat_native_confirmations {
     this->batch_dleq_proof = base64_batch_proof;
 
     return;
-  }
-
-  std::string getBase64(const std::vector<uint8_t>& in) {
-    std::string res;
-    size_t size = 0;
-    if (!EVP_EncodedLength(&size, in.size())) {
-      DCHECK(false);
-      LOG(ERROR) << "EVP_EncodedLength failure in getBase64";
-
-      return "";
-    }
-    std::vector<uint8_t> out(size);
-    int numEncBytes = EVP_EncodeBlock(&out.front(), &in.front(), in.size());
-    DCHECK(numEncBytes != 0);
-    res = (char*)&out.front();
-    return res;
   }
 
   std::string Confirmations::sign(std::string* keys, std::string* values, const unsigned int& size,

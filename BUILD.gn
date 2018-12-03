@@ -85,6 +85,7 @@ source_set("confirmations") {
 
   deps = [
     "//base",
+    "//net",
     "//third_party/boringssl",
     rebase_path("bat-native-tweetnacl:tweetnacl", dep_base),
   ]
