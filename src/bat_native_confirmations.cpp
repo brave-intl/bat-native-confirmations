@@ -20,12 +20,14 @@ const char* BRAVE_AD_SERVER = "ads-serve.bravesoftware.com";
 int BRAVE_AD_SERVER_PORT = 80;
 static int count=0;
 static std::string happy_data; 
+int happy_status=0;
 
 void OnBegin( const happyhttp::Response* r, void* userdata )
 {
     // printf("BEGIN (%d %s)\n", r->getstatus(), r->getreason() );
     count = 0;
     happy_data = "";
+    happy_status = r->getstatus();
 }
 
 void OnData( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n )
@@ -37,6 +39,8 @@ void OnData( const happyhttp::Response* r, void* userdata, const unsigned char* 
 
 void OnComplete( const happyhttp::Response* r, void* userdata )
 {
+    happy_status = r->getstatus();
+    // printf("END (%d %s)\n", r->getstatus(), r->getreason() );
     // printf("COMPLETE (%d bytes)\n", count );
 }
 
@@ -411,7 +415,6 @@ int main() {
     std::string message = json;
     VerificationSignature client_sig = client_vKey.sign(message);
 
-
     std::string base64_token_preimage = restored_unblinded_token.preimage().encode_base64();
     std::string base64_signature = client_sig.encode_base64();
 
@@ -422,8 +425,6 @@ int main() {
     bundle.SetKey("t", base::Value(base64_token_preimage));
     base::JSONWriter::Write(bundle, &credential_json);
 
-std::cerr << "credential_json: " << (credential_json) << "\n";
-
     std::vector<uint8_t> vec(credential_json.begin(), credential_json.end());
     std::string b64_encoded_a = conf_client.getBase64(vec);
 
@@ -433,8 +434,6 @@ std::cerr << "credential_json: " << (credential_json) << "\n";
     DCHECK(b64_encoded_a == b64_encoded);
 
     std::string uri_encoded = net::EscapeQueryParamValue(b64_encoded, true);
-
-std::cerr << "uri_encoded: " << (uri_encoded) << "\n";
 
     // 3 pieces we need for our POST request, 1 for URL, 1 for body, and 1 for URL that depends on body
     std::string confirmation_id = base::GenerateGUID();
@@ -447,7 +446,6 @@ std::cerr << "uri_encoded: " << (uri_encoded) << "\n";
     conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
 
     std::string endpoint = std::string("/v1/confirmation/").append(confirmation_id).append("/").append(credential);
-std::cerr << "endpoint: " << (endpoint) << "\n";
     
     // -d "{ \"creativeInstanceId\": \"6ca04e53-2741-4d62-acbb-e63336d7ed46\", \"payload\": {}, \"prePaymentToken\": \"cgILwnP8ua+cZ+YHJUBq4h+U+mt6ip8lX9hzElHrSBg=\", \"type\": \"landed\" }"
     const char * h[] = {
@@ -459,15 +457,42 @@ std::cerr << "endpoint: " << (endpoint) << "\n";
 
     while( conn.outstanding() ) conn.pump();
     std::string post_resp = happy_data;
-std::cerr << "post_resp: " << (post_resp) << "\n";
     ///////////////////////////////////////////////////////////////////////
-exit(0);
 
-    // TODO on success, pop fronts: 
-    conf_client.popFrontConfirmation();
-    // TODO on inet failure, retry or cleanup & unlock
+    bool success = false;
+
+    if (happy_status == 201) {  // 201 - created
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
+      base::DictionaryValue* dict;
+      if (!value->GetAsDictionary(&dict)) {
+        std::cout << "no 3.1c resp dict" << "\n";
+        abort();
+      }
+
+      base::Value *v;
+      if (!(v = dict->FindKey("id"))) {
+        success = false;
+        std::cout << "3.1c could not get id\n";
+      }
+      else {
+        std::string id31 = v->GetString();
+        DCHECK(confirmation_id == id31);
+        success = true;
+      }
+    }
+
+    //check return code, check json for `id` key
+
+    if(success) {
+      // on success, pop fronts: 
+      conf_client.popFrontConfirmation();
+    } else {
+      // TODO on inet failure, retry or cleanup & unlock
+    }
+
 
     // TODO guessing we're going to have to store multiple confirmation_id ?
+    // TODO this worth isn't actually returned here, but at the next GET step
     conf_client.step_3_2_storeConfirmationIdAndWorth(confirmation_id, mock_worth);
     conf_client.mutex.unlock();
   }
@@ -476,8 +501,71 @@ exit(0);
   // retrieve payment IOU
   {
     conf_client.mutex.lock();
-    // TODO GET /v1/confirmation/{confirmation_id}/paymentToken
-    // TODO on inet failure, retry or cleanup & unlock
+
+    // 4.1 GET /v1/confirmation/{confirmation_id}/paymentToken
+
+    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+    std::string endpoint = std::string("/v1/confirmation/").append(conf_client.confirmation_id).append("/paymentToken");
+    
+    conn.request("GET", endpoint.c_str());
+
+    while( conn.outstanding() ) conn.pump();
+
+    int get_resp_code = happy_status;
+    std::string get_resp = happy_data;
+
+std::cerr << "get_resp: " << (get_resp) << "\n";
+
+    if (get_resp_code == 200) { // paid:true response
+       // TODO ? ?
+    } else if (get_resp_code == 202) { // paid:false response
+      // 1. collect estimateToken from JSON
+      // 2. derive estimate
+
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
+      base::DictionaryValue* dict;
+      if (!value->GetAsDictionary(&dict)) {
+        std::cout << "4.1 202 no dict" << "\n";
+        abort();
+      }
+
+      base::Value *v;
+      if (!(v = dict->FindKey("estimateToken"))) {
+        std::cout << "4.1 202 no estimateToken\n";
+        abort();
+      }
+
+      base::DictionaryValue* et;
+      if (!v->GetAsDictionary(&et)) {
+        std::cout << "4.1 202 no eT dict" << "\n";
+        abort();
+      }
+
+      if (!(v = et->FindKey("publicKey"))) {
+        std::cout << "4.1 202 no publicKey\n";
+        abort();
+      }
+
+      std::string token = v->GetString();
+      std::vector<std::string> &k = conf_client.server_bat_payment_keys;
+
+      // find position of public key in the BAT array  (later use same pos to find the `name`)
+      ptrdiff_t pos = distance(k.begin(), find(k.begin(), k.end(), token));
+
+      bool found = pos < (ptrdiff_t)k.size();
+
+      if (found) {
+        std::string name = conf_client.server_bat_payment_names[pos];
+        conf_client.estimated_payment_worth = name;
+      }
+
+    } else { // something broke before server could decide paid:true/false
+      // TODO inet failure: retry or cleanup & unlock
+    }
+
+exit(0);
 
     mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_payment_tokens);
     mock_sbp = mock_server.signed_tokens;

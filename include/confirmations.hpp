@@ -32,7 +32,7 @@ namespace bat_native_confirmations {
     std::vector<std::string>    unblinded_signed_payment_tokens;
     
     std::string confirmation_id;
-    std::string payment_worth;
+    std::string estimated_payment_worth;
 
     ////////////////////////////////////////
     std::string nonce;

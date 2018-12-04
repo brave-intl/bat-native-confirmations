@@ -134,7 +134,7 @@ namespace bat_native_confirmations {
   void Confirmations::step_3_2_storeConfirmationIdAndWorth(std::string confirmationId, std::string paymentWorth) {
 
     this->confirmation_id = confirmationId;
-    this->payment_worth = paymentWorth;
+    this->estimated_payment_worth = paymentWorth;
 
     this->saveState();
     std::cout << "step3.2: store confirmationId and Worth" << std::endl;
@@ -259,7 +259,7 @@ namespace bat_native_confirmations {
     dict.SetWithoutPathExpansion("signed_blinded_payment_tokens", munge(signed_blinded_payment_tokens));
     dict.SetWithoutPathExpansion("unblinded_signed_payment_tokens", munge(unblinded_signed_payment_tokens));
     dict.SetKey("confirmation_id", base::Value(confirmation_id));
-    dict.SetKey("payment_worth", base::Value(payment_worth));
+    dict.SetKey("estimated_payment_worth", base::Value(estimated_payment_worth));
 
     std::string json;
     base::JSONWriter::Write(dict, &json);
@@ -333,8 +333,8 @@ namespace bat_native_confirmations {
     if (!(v = dict->FindKey("confirmation_id"))) return fail;
     this->confirmation_id = v->GetString();
 
-    if (!(v = dict->FindKey("payment_worth"))) return fail;
-    this->payment_worth = v->GetString();
+    if (!(v = dict->FindKey("estimated_payment_worth"))) return fail;
+    this->estimated_payment_worth = v->GetString();
 
     return succeed;
   }
