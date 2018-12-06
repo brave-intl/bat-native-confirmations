@@ -502,16 +502,76 @@ int main() {
   if (pay_invoices)
   {  
     // access token can be created using `/auth/token`
+    // tokens will expire after an hour
+
     std::unique_ptr<base::Environment> env(base::Environment::Create());
-    std::string key = "BRAVE_ADS_SERVE_ACCESS_TOKEN";
-    std::string result;
-    bool has = env->GetVar(key, &result);
 
-    if (has) {
+    std::string key1 = "BRAVE_ADS_SERVE_LOGIN_EMAIL";
+    std::string key2 = "BRAVE_ADS_SERVE_LOGIN_PASSWORD";
 
-    } else {
-      std::cerr << "Environment key " << key << " not set so cannot mark invoices paid" << "\n";
+    std::string result1;
+    std::string result2;
+    bool has1 = env->GetVar(key1, &result1);
+    bool has2 = env->GetVar(key2, &result2);
+
+    if (!has1 || !has2) {
+      std::cerr << "Environment keys " << key1 << " or " << key2 << " not set so cannot mark invoices paid" << "\n";
+      abort();
     }
+
+    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+    std::string endpoint = std::string("/v1/auth/token");
+
+    const char * h[] = {
+      "accept", "application/json",
+      "Content-Type", "application/json",
+      NULL, NULL };
+
+    std::string real_body = std::string("{\"email\":\"").append(result1).append("\",\"password\":\"").append(result2).append("\"}");
+
+    conn.request("POST", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
+
+    while( conn.outstanding() ) conn.pump();
+    std::string post_resp = happy_data;
+std::cerr << "happy_data: " << (happy_data) << "\n";
+
+    std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
+    base::DictionaryValue* dict;
+    if (!value->GetAsDictionary(&dict)) {
+      std::cout << "no pay invoices resp dict" << "\n";
+      abort();
+    }
+
+    base::Value *v;
+    if (!(v = dict->FindKey("accessToken"))) {
+      std::cout << "no pay invoices accessToken\n";
+      abort();
+    }
+
+    std::string accessToken = v->GetString();
+
+    {
+      happyhttp::Connection conn2(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+      conn2.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+      std::string endpoint2 = std::string("/v1/invoice/");
+
+      std::string bearer = std::string("Bearer ").append(accessToken);
+
+      const char * h2[] = {
+        "Authorization", bearer.c_str(),
+        NULL, NULL };
+
+      std::string real_body2 = "";
+
+      conn2.request("POST", endpoint2.c_str(), h2, (const unsigned char *)real_body2.c_str(), real_body2.size());
+
+      while( conn2.outstanding() ) conn2.pump();
+      std::string post2_resp = happy_data;
+    }
+    
   }
 
   // retrieve payment IOU
