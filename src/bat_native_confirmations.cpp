@@ -592,8 +592,6 @@ int main() {
     int get_resp_code = happy_status;
     std::string get_resp = happy_data;
 
-std::cerr << "happy_data: " << (happy_data) << "\n";
-
     if (get_resp_code == 200) { // paid:true response
       base::Value *v;
       std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
@@ -716,12 +714,13 @@ std::cerr << "happy_data: " << (happy_data) << "\n";
         abort();
       }
 
-      // TODO this isn't working right? see https://bravesoftware.slack.com/archives/GDQJ6CT6K/p1544111445019800
-      // std::string token = v->GetString();
-      // std::string name = conf_client.BATNameFromBATPublicKey(token);
-      // if (name != "") {
-      //   conf_client.estimated_payment_worth = name;
-      // }
+      std::string token = v->GetString();
+      std::string name = conf_client.BATNameFromBATPublicKey(token);
+      if (name != "") {
+        conf_client.estimated_payment_worth = name;
+      } else {
+        std::cerr << "Step 4.1 202 verification empty name \n";
+      }
 
     } else { // something broke before server could decide paid:true/false
       // TODO inet failure: retry or cleanup & unlock
