@@ -12,6 +12,7 @@
 
 #include "net/base/escape.h"
 #include "base/base64.h"
+#include "base/environment.h"
 
 using namespace challenge_bypass_ristretto;
 using namespace bat_native_confirmations;
@@ -84,6 +85,7 @@ int main() {
   //    5.2 store transactionIds + payment
 
   bool test_with_server = true;
+  bool pay_invoices = true;
 
   bat_native_confirmations::Confirmations conf_client;
   bat_native_confirmations::MockServer mock_server;
@@ -497,8 +499,23 @@ int main() {
     conf_client.mutex.unlock();
   }
 
+  if (pay_invoices)
+  {  
+    // access token can be created using `/auth/token`
+    std::unique_ptr<base::Environment> env(base::Environment::Create());
+    std::string key = "BRAVE_ADS_SERVE_ACCESS_TOKEN";
+    std::string result;
+    bool has = env->GetVar(key, &result);
+
+    if (has) {
+
+    } else {
+      std::cerr << "Environment key " << key << " not set so cannot mark invoices paid" << "\n";
+    }
+  }
 
   // retrieve payment IOU
+  // TODO: we cycle through this multiple times until the token is marked paid
   {
     conf_client.mutex.lock();
 
@@ -567,6 +584,8 @@ std::cerr << "get_resp: " << (get_resp) << "\n";
 
 exit(0);
 
+// TODO I think all of the below only follows the 200 response, inside the case for it
+
     mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_payment_tokens);
     mock_sbp = mock_server.signed_tokens;
     mock_sbp_token = mock_sbp.front();
@@ -592,7 +611,7 @@ exit(0);
   {
     conf_client.mutex.lock();
     conf_client.step_5_1_unblindSignedBlindedPayments();
-    // TODO  PUT  (POST?) /.../tokens/{paymentId}
+    // TODO PUT /confirmation/payment/{paymentId}
     // TODO on inet failure, retry or cleanup & unlock
     // TODO how long are we keeping these txn ids around? what is format of "actual payment" ? 
     conf_client.step_5_2_storeTransactionIdsAndActualPayment();
