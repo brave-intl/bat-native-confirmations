@@ -535,7 +535,6 @@ int main() {
 
     while( conn.outstanding() ) conn.pump();
     std::string post_resp = happy_data;
-std::cerr << "happy_data: " << (happy_data) << "\n";
 
     std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
     base::DictionaryValue* dict;
@@ -593,10 +592,92 @@ std::cerr << "happy_data: " << (happy_data) << "\n";
     int get_resp_code = happy_status;
     std::string get_resp = happy_data;
 
-std::cerr << "get_resp: " << (get_resp) << "\n";
-
     if (get_resp_code == 200) { // paid:true response
-       // TODO ? ?
+      base::Value *v;
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
+      base::DictionaryValue* dict;
+      if (!value->GetAsDictionary(&dict)) {
+        std::cout << "4.1 200 no dict" << "\n";
+        abort();
+      }
+
+      if (!(v = dict->FindKey("id"))) {
+        std::cout << "4.1 200 no id\n";
+        abort();
+      }
+      std::string id = v->GetString();
+
+
+      if (!(v = dict->FindKey("paymentToken"))) {
+        std::cout << "4.1 200 no paymentToken\n";
+        abort();
+      }
+
+      base::DictionaryValue* pt;
+      if (!v->GetAsDictionary(&pt)) {
+        std::cout << "4.1 200 no pT dict" << "\n";
+        abort();
+      }
+
+      if (!(v = pt->FindKey("publicKey"))) {
+        std::cout << "4.1 200 no publicKey\n";
+        abort();
+      }
+      std::string publicKey = v->GetString();
+
+      if (!(v = pt->FindKey("batchProof"))) {
+        std::cout << "4.1 200 no batchProof\n";
+        abort();
+      }
+      std::string batchProof = v->GetString();
+
+      if (!(v = pt->FindKey("signedTokens"))) {
+        std::cout << "4.1 200 could not get signedTokens\n";
+        abort();
+      }
+
+      base::ListValue signedTokensList(v->GetList());
+      std::vector<std::string> signedBlindedTokens = {};
+
+      for (size_t i = 0; i < signedTokensList.GetSize(); i++) {
+        base::Value *x;
+        signedTokensList.Get(i, &x);
+        signedBlindedTokens.push_back(x->GetString());
+      }
+
+      for (auto signedBlindedToken : signedBlindedTokens) {
+        conf_client.step_4_2_storeSignedBlindedPaymentToken(signedBlindedToken);
+      }
+
+      // for (auto bpt :conf_client.blinded_payment_tokens) { std::cerr << "bpt: " << (bpt) << "\n"; }
+      // for (auto sbpt :conf_client.signed_blinded_payment_tokens) { std::cerr << "sbpt: " << (sbpt) << "\n"; }
+
+
+      // mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_payment_tokens);
+      // mock_sbp = mock_server.signed_tokens;
+      // mock_sbp_token = mock_sbp.front();
+      // mock_payment_proof = mock_server.batch_dleq_proof;
+
+      // conf_client.step_4_2_storeSignedBlindedPaymentToken(mock_sbp_token);
+
+      // bool mock_verified = conf_client.verifyBatchDLEQProof(mock_payment_proof, 
+      //                                                 conf_client.blinded_payment_tokens,
+      //                                                 conf_client.signed_blinded_payment_tokens,
+      //                                                 mock_payments_public_key);
+      // if (!mock_verified) {
+      //   //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
+      //   std::cerr << "ERROR: Mock payment proof invalid" << std::endl;
+      // }
+
+      bool real_verified = conf_client.verifyBatchDLEQProof(batchProof, 
+                                                      conf_client.blinded_payment_tokens,
+                                                      conf_client.signed_blinded_payment_tokens,
+                                                      publicKey);
+      if (!real_verified) {
+        //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
+        std::cerr << "ERROR: Real payment proof invalid" << std::endl;
+      }
+
     } else if (get_resp_code == 202) { // paid:false response
       // 1. collect estimateToken from JSON
       // 2. derive estimate
@@ -643,24 +724,6 @@ std::cerr << "get_resp: " << (get_resp) << "\n";
     }
 
 exit(0);
-
-// TODO I think all of the below only follows the 200 response, inside the case for it
-
-    mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_payment_tokens);
-    mock_sbp = mock_server.signed_tokens;
-    mock_sbp_token = mock_sbp.front();
-    mock_payment_proof = mock_server.batch_dleq_proof;
-
-    conf_client.step_4_2_storeSignedBlindedPaymentToken(mock_sbp_token);
-
-    bool mock_verified = conf_client.verifyBatchDLEQProof(mock_payment_proof, 
-                                                     conf_client.blinded_payment_tokens,
-                                                     conf_client.signed_blinded_payment_tokens,
-                                                     mock_payments_public_key);
-    if (!mock_verified) {
-      //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
-      std::cerr << "ERROR: Mock payment proof invalid" << std::endl;
-    }
 
     conf_client.mutex.unlock();
   }
