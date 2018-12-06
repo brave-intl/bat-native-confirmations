@@ -64,6 +64,7 @@ namespace bat_native_confirmations {
     std::string toJSONString();
     bool fromJSONString(std::string json);
     std::vector<std::string> unmunge(base::Value *value);
+    std::string BATNameFromBATPublicKey(std::string token);
 
     //convert std::string of ascii-hex to raw data vector<uint8_t>
     std::vector<uint8_t> rawDataBytesVectorFromASCIIHexString(std::string ascii);

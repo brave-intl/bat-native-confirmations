@@ -390,6 +390,22 @@ namespace bat_native_confirmations {
     c.erase(c.begin());
   }
 
+  std::string Confirmations::BATNameFromBATPublicKey(std::string token) {
+    std::vector<std::string> &k = this->server_bat_payment_keys;
+
+    // find position of public key in the BAT array  (later use same pos to find the `name`)
+    ptrdiff_t pos = distance(k.begin(), find(k.begin(), k.end(), token));
+
+    bool found = pos < (ptrdiff_t)k.size();
+
+    if (!found) {
+      return "";
+    }
+
+    std::string name = this->server_bat_payment_names[pos];
+    return name;
+  }
+
   MockServer::~MockServer() {
 
   }

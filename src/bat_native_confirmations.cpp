@@ -85,7 +85,7 @@ int main() {
   //    5.2 store transactionIds + payment
 
   bool test_with_server = true;
-  bool pay_invoices = true;
+  bool pay_invoices = true; // toggle to test paid/not paid state at step 4.1 200/202
 
   bat_native_confirmations::Confirmations conf_client;
   bat_native_confirmations::MockServer mock_server;
@@ -592,6 +592,8 @@ int main() {
     int get_resp_code = happy_status;
     std::string get_resp = happy_data;
 
+std::cerr << "happy_data: " << (happy_data) << "\n";
+
     if (get_resp_code == 200) { // paid:true response
       base::Value *v;
       std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
@@ -678,6 +680,14 @@ int main() {
         std::cerr << "ERROR: Real payment proof invalid" << std::endl;
       }
 
+      std::string name = conf_client.BATNameFromBATPublicKey(publicKey);
+      if (name != "") {
+        // TODO we're calling this `estimated`, but it should be `actual` ?
+        conf_client.estimated_payment_worth = name;
+      } else {
+        std::cerr << "Step 4.1/4.2 200 verification empty name \n";
+      }
+
     } else if (get_resp_code == 202) { // paid:false response
       // 1. collect estimateToken from JSON
       // 2. derive estimate
@@ -706,28 +716,21 @@ int main() {
         abort();
       }
 
-      std::string token = v->GetString();
-      std::vector<std::string> &k = conf_client.server_bat_payment_keys;
-
-      // find position of public key in the BAT array  (later use same pos to find the `name`)
-      ptrdiff_t pos = distance(k.begin(), find(k.begin(), k.end(), token));
-
-      bool found = pos < (ptrdiff_t)k.size();
-
-      if (found) {
-        std::string name = conf_client.server_bat_payment_names[pos];
-        conf_client.estimated_payment_worth = name;
-      }
+      // TODO this isn't working right? see https://bravesoftware.slack.com/archives/GDQJ6CT6K/p1544111445019800
+      // std::string token = v->GetString();
+      // std::string name = conf_client.BATNameFromBATPublicKey(token);
+      // if (name != "") {
+      //   conf_client.estimated_payment_worth = name;
+      // }
 
     } else { // something broke before server could decide paid:true/false
       // TODO inet failure: retry or cleanup & unlock
     }
 
-exit(0);
-
     conf_client.mutex.unlock();
   }
 
+exit(0);
 
   // cash-in payment IOU
   // we may want to do this in conjunction with the previous retrieval step
