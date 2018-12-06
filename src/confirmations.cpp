@@ -179,7 +179,7 @@ namespace bat_native_confirmations {
     // persist?
     this->saveState();
 
-    std::cout << "step5.1 unlind signed blinded payments" << std::endl;
+    std::cout << "step5.1 unblind signed blinded payments" << std::endl;
   }
 
   void Confirmations::step_5_2_storeTransactionIdsAndActualPayment() {

@@ -682,6 +682,7 @@ int main() {
       if (name != "") {
         // TODO we're calling this `estimated`, but it should be `actual` ?
         conf_client.estimated_payment_worth = name;
+        conf_client.server_payment_key = publicKey;
       } else {
         std::cerr << "Step 4.1/4.2 200 verification empty name \n";
       }
@@ -729,20 +730,97 @@ int main() {
     conf_client.mutex.unlock();
   }
 
-exit(0);
 
   // cash-in payment IOU
   // we may want to do this in conjunction with the previous retrieval step
   {
     conf_client.mutex.lock();
     conf_client.step_5_1_unblindSignedBlindedPayments();
-    // TODO PUT /confirmation/payment/{paymentId}
-    // TODO on inet failure, retry or cleanup & unlock
+
     // TODO how long are we keeping these txn ids around? what is format of "actual payment" ? 
+
+    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+    // PUT /v1/confirmation/token/{payment_id}
+    std::string endpoint = std::string("/v1/confirmation/payment/").append(real_wallet_address);
+
+    //paymentCredentials->[]->{}->credential->payload    {}
+    //paymentCredentials->[]->{}->credential->signature
+    //paymentCredentials->[]->{}->credential->t
+    //paymentCredentials->[]->{}->publicKey              conf_client.server_payment_key
+
+    base::ListValue * list = new base::ListValue();
+
+    // TODO  each of these sbpt's actually has its own associated public key
+    // TODO have brianjohnson spot check this block to make sure new/::move/::unique_ptr usage is right
+    // TODO on success, clear out the list ... ? (sum up totals...?)
+    for (auto sbpt: conf_client.signed_blinded_payment_tokens) {
+      base::DictionaryValue cred;
+      cred.SetKey("payload", base::Value(real_wallet_address));
+      // TODO
+      cred.SetKey("signature", base::Value("xxx TODO xxx"));
+      cred.SetKey("t", base::Value(sbpt));
+
+      base::DictionaryValue * dict = new base::DictionaryValue();
+      dict->SetKey("credential", std::move(cred));
+      dict->SetKey("publicKey", base::Value(conf_client.server_payment_key));
+
+      list->Append(std::unique_ptr<base::DictionaryValue>(dict));
+    }
+
+    base::DictionaryValue sdict;
+    sdict.SetWithoutPathExpansion("paymentCredentials", std::unique_ptr<base::ListValue>(list));
+
+    std::string json;
+    base::JSONWriter::Write(sdict, &json);
+
+    const char * h[] = { "accept", "application/json",
+                         "Content-Type", "application/json",
+                         NULL, NULL };
+
+    std::string real_body = json;
+std::cerr << "real_body: " << (real_body) << "\n";
+    conn.request("PUT", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
+
+    while( conn.outstanding() ) conn.pump();
+    std::string put_resp = happy_data;
+    int put_resp_code = happy_status;
+
+std::cerr << "put_resp: " << (put_resp) << "\n";
+
+    if (put_resp_code == 200) {
+      // NB. this still has the potential to carry an error key
+
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(put_resp));
+      base::DictionaryValue* dict;
+      if (!value->GetAsDictionary(&dict)) {
+        std::cout << "no dict" << "\n";
+        abort();
+      }
+
+      base::Value *v;
+      if ((v = dict->FindKey("issuers"))) {
+        //error case 
+        std::string err = v->GetString();
+        std::cout << "PUT error: " << err << "\n";
+      } else {
+
+        std::cout << "No error" << "\n";
+
+      }
+
+    } else {
+      // TODO on inet failure, retry or cleanup & unlock
+    }
+
+exit(0);
+
     conf_client.step_5_2_storeTransactionIdsAndActualPayment();
     
     // TODO actually, on success we pop payments equal to # retrieved, not just first:
     //conf_client.popFrontPayment();
+
     conf_client.mutex.unlock();
   }
 
