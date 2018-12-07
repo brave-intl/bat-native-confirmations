@@ -810,6 +810,7 @@ std::cerr << "real_body: " << (real_body) << "\n";
 
 std::cerr << "put_resp: " << (put_resp) << "\n";
 
+
     if (put_resp_code == 200) {
       // NB. this still has the potential to carry an error key
 
@@ -836,8 +837,19 @@ std::cerr << "put_resp: " << (put_resp) << "\n";
           //error case 
           std::string err = x->GetString();
           std::cerr << "PUT error: " << err << "\n";
-        } else {
-          std::cerr << "No error" << "\n";
+        } else { 
+          // no error
+
+          std::string transaction_id;
+
+          if ((x = dict->FindKey("id"))) {
+            transaction_id = x->GetString();
+          } else {
+            std::cerr << "5.1 no txn id" << "\n";
+            abort();
+          }
+std::cerr << "transaction_id: " << (transaction_id) << "\n";
+
         }
 
       }
