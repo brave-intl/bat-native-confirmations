@@ -88,7 +88,7 @@ namespace bat_native_confirmations {
   void Confirmations::step_3_1a_unblindSignedBlindedConfirmations() {
 
     if (this->signed_blinded_confirmation_tokens.size() <= 0) {
-      std::cout << "ERR: step_3_1a, no signed blinded confirmation tokens" << std::endl;
+      std::cout << "ERROR: step_3_1a, no signed blinded confirmation tokens" << std::endl;
       return;
     }
 
@@ -155,7 +155,7 @@ namespace bat_native_confirmations {
     int n = this->signed_blinded_payment_tokens.size();
 
     if (n <= 0) {
-      std::cout << "ERR: step_5_1, no signed blinded payment tokens" << std::endl;
+      std::cout << "ERROR: step_5_1, no signed blinded payment tokens" << std::endl;
       return;
     }
 
