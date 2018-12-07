@@ -122,18 +122,17 @@ int main() {
 
   if (test_with_server) {
     get_catalog();
-    // std::cout << "happy_data: " <<  happy_data << "\n";
 
     std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
     base::DictionaryValue* dict;
     if (!value->GetAsDictionary(&dict)) {
-      std::cout << "no dict" << "\n";
+      std::cerr << "no dict" << "\n";
       abort();
     }
 
     base::Value *v;
     if (!(v = dict->FindKey("issuers"))) {
-      std::cout << "could not get issuers\n";
+      std::cerr << "could not get issuers\n";
       abort();
     }
 
@@ -148,7 +147,7 @@ int main() {
       //v.push_back(x->GetString());
       base::DictionaryValue* d;
       if (!x->GetAsDictionary(&d)) {
-        std::cout << "no dict x/d" << "\n";
+        std::cerr << "no dict x/d" << "\n";
         abort();
       }
       base::Value *a;
@@ -276,13 +275,13 @@ int main() {
       std::unique_ptr<base::Value> value(base::JSONReader::Read(post_resp));
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
-        std::cout << "2.2 post resp: no dict" << "\n";
+        std::cerr << "2.2 post resp: no dict" << "\n";
         abort();
       }
 
       base::Value *v;
       if (!(v = dict->FindKey("nonce"))) {
-        std::cout << "2.2 no nonce\n";
+        std::cerr << "2.2 no nonce\n";
         abort();
       }
 
@@ -329,21 +328,21 @@ int main() {
           std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
           base::DictionaryValue* dict;
           if (!value->GetAsDictionary(&dict)) {
-            std::cout << "2.3 get resp: no dict" << "\n";
+            std::cerr << "2.3 get resp: no dict" << "\n";
             abort();
           }
 
           base::Value *v;
 
           if (!(v = dict->FindKey("batchProof"))) {
-            std::cout << "2.3 no batchProof\n";
+            std::cerr << "2.3 no batchProof\n";
             abort();
           }
 
           std::string real_batch_proof = v->GetString();
 
           if (!(v = dict->FindKey("signedTokens"))) {
-            std::cout << "2.3 no signedTokens\n";
+            std::cerr << "2.3 no signedTokens\n";
             abort();
           }
 
@@ -467,14 +466,14 @@ int main() {
       std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
-        std::cout << "no 3.1c resp dict" << "\n";
+        std::cerr << "no 3.1c resp dict" << "\n";
         abort();
       }
 
       base::Value *v;
       if (!(v = dict->FindKey("id"))) {
         success = false;
-        std::cout << "3.1c could not get id\n";
+        std::cerr << "3.1c could not get id\n";
       }
       else {
         std::string id31 = v->GetString();
@@ -539,13 +538,13 @@ int main() {
     std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
     base::DictionaryValue* dict;
     if (!value->GetAsDictionary(&dict)) {
-      std::cout << "no pay invoices resp dict" << "\n";
+      std::cerr << "no pay invoices resp dict" << "\n";
       abort();
     }
 
     base::Value *v;
     if (!(v = dict->FindKey("accessToken"))) {
-      std::cout << "no pay invoices accessToken\n";
+      std::cerr << "no pay invoices accessToken\n";
       abort();
     }
 
@@ -597,42 +596,42 @@ int main() {
       std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
-        std::cout << "4.1 200 no dict" << "\n";
+        std::cerr << "4.1 200 no dict" << "\n";
         abort();
       }
 
       if (!(v = dict->FindKey("id"))) {
-        std::cout << "4.1 200 no id\n";
+        std::cerr << "4.1 200 no id\n";
         abort();
       }
       std::string id = v->GetString();
 
 
       if (!(v = dict->FindKey("paymentToken"))) {
-        std::cout << "4.1 200 no paymentToken\n";
+        std::cerr << "4.1 200 no paymentToken\n";
         abort();
       }
 
       base::DictionaryValue* pt;
       if (!v->GetAsDictionary(&pt)) {
-        std::cout << "4.1 200 no pT dict" << "\n";
+        std::cerr << "4.1 200 no pT dict" << "\n";
         abort();
       }
 
       if (!(v = pt->FindKey("publicKey"))) {
-        std::cout << "4.1 200 no publicKey\n";
+        std::cerr << "4.1 200 no publicKey\n";
         abort();
       }
       std::string publicKey = v->GetString();
 
       if (!(v = pt->FindKey("batchProof"))) {
-        std::cout << "4.1 200 no batchProof\n";
+        std::cerr << "4.1 200 no batchProof\n";
         abort();
       }
       std::string batchProof = v->GetString();
 
       if (!(v = pt->FindKey("signedTokens"))) {
-        std::cout << "4.1 200 could not get signedTokens\n";
+        std::cerr << "4.1 200 could not get signedTokens\n";
         abort();
       }
 
@@ -694,24 +693,24 @@ int main() {
       std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
-        std::cout << "4.1 202 no dict" << "\n";
+        std::cerr << "4.1 202 no dict" << "\n";
         abort();
       }
 
       base::Value *v;
       if (!(v = dict->FindKey("estimateToken"))) {
-        std::cout << "4.1 202 no estimateToken\n";
+        std::cerr << "4.1 202 no estimateToken\n";
         abort();
       }
 
       base::DictionaryValue* et;
       if (!v->GetAsDictionary(&et)) {
-        std::cout << "4.1 202 no eT dict" << "\n";
+        std::cerr << "4.1 202 no eT dict" << "\n";
         abort();
       }
 
       if (!(v = et->FindKey("publicKey"))) {
-        std::cout << "4.1 202 no publicKey\n";
+        std::cerr << "4.1 202 no publicKey\n";
         abort();
       }
 
@@ -738,6 +737,7 @@ int main() {
     conf_client.step_5_1_unblindSignedBlindedPayments();
 
     // TODO how long are we keeping these txn ids around? what is format of "actual payment" ? 
+    // TODO server_payment_key everywhere below likely needs to be replaced or revised
 
     happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
     conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
@@ -745,22 +745,40 @@ int main() {
     // PUT /v1/confirmation/token/{payment_id}
     std::string endpoint = std::string("/v1/confirmation/payment/").append(real_wallet_address);
 
-    //paymentCredentials->[]->{}->credential->payload    {}
-    //paymentCredentials->[]->{}->credential->signature
-    //paymentCredentials->[]->{}->credential->t
-    //paymentCredentials->[]->{}->publicKey              conf_client.server_payment_key
+    //{}->payload->{}->payment_id                               real_wallet_address
+    //{}->paymentCredentials->[]->{}->credential->{}->signature signature of payload
+    //{}->paymentCredentials->[]->{}->credential->{}->t         uspt
+    //{}->paymentCredentials->[]->{}->publicKey                 conf_client.server_payment_key
+
+    std::string primary = "primary";
+    std::string pay_key = "paymentId";
+    std::string pay_val = real_wallet_address;
+
+    base::DictionaryValue payload;
+    payload.SetKey(pay_key, base::Value(pay_val));
+
+    std::string payload_json;
+    base::JSONWriter::Write(payload, &payload_json);
+std::cerr << "payload_json: " << (payload_json) << "\n";
 
     base::ListValue * list = new base::ListValue();
 
-    // TODO  each of these sbpt's actually has its own associated public key
-    // TODO have brianjohnson spot check this block to make sure new/::move/::unique_ptr usage is right
+    // TODO  each of these uspt's actually has its own associated public key
+    // TODO have brianjohnson/nejc/terry spot check this block to make sure new/::move/::unique_ptr usage is right
     // TODO on success, clear out the list ... ? (sum up totals...?)
-    for (auto sbpt: conf_client.signed_blinded_payment_tokens) {
+    for (auto uspt: conf_client.unblinded_signed_payment_tokens) {
+
+      UnblindedToken restored_unblinded_token = UnblindedToken::decode_base64(uspt);
+      VerificationKey client_vKey = restored_unblinded_token.derive_verification_key();
+      std::string message = payload_json;
+      VerificationSignature client_sig = client_vKey.sign(message);
+      std::string base64_signature = client_sig.encode_base64();
+      std::string base64_token_preimage = restored_unblinded_token.preimage().encode_base64();
+
       base::DictionaryValue cred;
-      cred.SetKey("payload", base::Value(real_wallet_address));
-      // TODO
-      cred.SetKey("signature", base::Value("xxx TODO xxx"));
-      cred.SetKey("t", base::Value(sbpt));
+      cred.SetKey("signature", base::Value(base64_signature));
+      cred.SetKey("t", base::Value(base64_token_preimage));
+      // cred.SetKey("t", base::Value(uspt));
 
       base::DictionaryValue * dict = new base::DictionaryValue();
       dict->SetKey("credential", std::move(cred));
@@ -771,6 +789,7 @@ int main() {
 
     base::DictionaryValue sdict;
     sdict.SetWithoutPathExpansion("paymentCredentials", std::unique_ptr<base::ListValue>(list));
+    sdict.SetKey("payload", std::move(payload));
 
     std::string json;
     base::JSONWriter::Write(sdict, &json);
@@ -793,22 +812,34 @@ std::cerr << "put_resp: " << (put_resp) << "\n";
       // NB. this still has the potential to carry an error key
 
       std::unique_ptr<base::Value> value(base::JSONReader::Read(put_resp));
-      base::DictionaryValue* dict;
-      if (!value->GetAsDictionary(&dict)) {
-        std::cout << "no dict" << "\n";
+
+      base::ListValue *list;
+      if (!value->GetAsList(&list)) {
+        std::cerr << "no list" << "\n";
         abort();
       }
 
-      base::Value *v;
-      if ((v = dict->FindKey("issuers"))) {
-        //error case 
-        std::string err = v->GetString();
-        std::cout << "PUT error: " << err << "\n";
-      } else {
 
-        std::cout << "No error" << "\n";
+      for (size_t i = 0; i < list->GetSize(); i++) {
+        base::Value *x;
+        list->Get(i, &x);
+
+        base::DictionaryValue* dict;
+        if (!x->GetAsDictionary(&dict)) {
+          std::cerr << "no dict" << "\n";
+          abort();
+        }
+
+        if ((x = dict->FindKey("error"))) {
+          //error case 
+          std::string err = x->GetString();
+          std::cerr << "PUT error: " << err << "\n";
+        } else {
+          std::cerr << "No error" << "\n";
+        }
 
       }
+
 
     } else {
       // TODO on inet failure, retry or cleanup & unlock
