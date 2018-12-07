@@ -789,7 +789,8 @@ std::cerr << "payload_json: " << (payload_json) << "\n";
 
     base::DictionaryValue sdict;
     sdict.SetWithoutPathExpansion("paymentCredentials", std::unique_ptr<base::ListValue>(list));
-    sdict.SetKey("payload", std::move(payload));
+    //sdict.SetKey("payload", std::move(payload));
+    sdict.SetKey("payload", base::Value(payload_json));
 
     std::string json;
     base::JSONWriter::Write(sdict, &json);
@@ -845,8 +846,7 @@ std::cerr << "put_resp: " << (put_resp) << "\n";
       // TODO on inet failure, retry or cleanup & unlock
     }
 
-exit(0);
-
+    // TODO
     conf_client.step_5_2_storeTransactionIdsAndActualPayment();
     
     // TODO actually, on success we pop payments equal to # retrieved, not just first:
