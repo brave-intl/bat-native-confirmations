@@ -109,9 +109,13 @@ int main() {
   std::string mock_body_sha_256 = "MGyHkaktkuGfmopz+uljkmapS0zLwBB9GJNp68kqVzM=";
   std::string mock_signature_22 = "V+paOGZm0OU36hJCr7BrR49OlMpOiuaGC2DeXXwBWlKU88FXA/MOv5gwl/MqQPHWX5RA1+9YDb/6g6FEcsYnAw==";
 
-  // TODO: fill in : hook up into brave-core client / bat-native-ads: populate creative instance id with real one
   std::string mock_creative_instance_id = "6ca04e53-2741-4d62-acbb-e63336d7ed46";
-  std::string real_creative_instance_id = mock_creative_instance_id;
+  // TODO: fill in : hook up into brave-core client / bat-native-ads: populate creative instance id with real one
+  std::string real_creative_instance_id = mock_creative_instance_id; // XXX TODO
+
+
+  std::vector<std::string> real_bat_names = {};
+  std::vector<std::string> real_bat_keys = {};
 
   // TODO: fill in : hook up into brave-core client / bat-native-ads: populate mock_wallet_address with real wallet address
   std::string real_wallet_address = mock_wallet_address; // XXX TODO
@@ -138,8 +142,8 @@ int main() {
 
     base::ListValue list(v->GetList());
 
-    mock_bat_names = {};
-    mock_bat_keys = {};
+    real_bat_names = {};
+    real_bat_keys = {};
  
     for (size_t i = 0; i < list.GetSize(); i++) {
       base::Value *x;
@@ -174,8 +178,8 @@ int main() {
         // per amir, evq, we're not actually using this! so it's not supposed to be appearing in the catalog return but is
         real_payments_public_key = pubkey; 
       } else if (std::regex_match(name, bat_regex) ) {
-        mock_bat_names.push_back(name);
-        mock_bat_keys.push_back(pubkey);
+        real_bat_names.push_back(name);
+        real_bat_keys.push_back(pubkey);
       }
     }
 
@@ -185,20 +189,14 @@ int main() {
   // TODO: hook up into brave-core client / bat-native-ads: this will get called by bat-native-ads when it downloads the ad catalog w/ keys (once only for now?)
   // NOTE: this call can block! it waits on a mutex to unlock. generally all these `step_#_#` calls will
   {
-    conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(real_confirmations_public_key, real_payments_public_key, mock_bat_names, mock_bat_keys);
+    conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(real_confirmations_public_key, real_payments_public_key, real_bat_names, real_bat_keys);
   }
 
   // TODO: hook up into brave-core client / bat-native-ads: this should happen on launch (in the background) and on loop/timer (in the background)
   // TODO: hook up into brave-core client / bat-native-ads: we'll need to not show ads whenever we're out of tokens use: conf_client.confirmations_ready_for_ad_showing(); to test
   {
-
-//>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
     conf_client.mutex.lock();
     conf_client.step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem();
-
-    // TODO step_2_2 POST the tokens via client
-    // TODO          POST: on inet failure, retry or cleanup & unlock
     {
       std::string digest = "digest";
       std::string primary = "primary";
@@ -248,12 +246,10 @@ int main() {
       std::string real_signature_field = conf_client.sign(&digest, &real_digest_field, 1, primary, real_skey);
       /////////////////////////////////////////////////////////////////////////////
 
-
-
       happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
       conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
 
-      // /v1/confirmation/token/{payment_id}
+      // step 2.2 /v1/confirmation/token/{payment_id}
       std::string endpoint = std::string("/v1/confirmation/token/").append(real_wallet_address);
 
       const char * h[] = {"digest", (const char *) real_digest_field.c_str(), 
@@ -271,6 +267,8 @@ int main() {
       //TODO this should be the `nonce` in the return. we need to make sure we get the nonce in the separate request  
       //observation. seems like we should move all of this (the tokens in-progress) data to a map keyed on the nonce, and then
       //step the storage through (pump) in a state-wise (dfa) as well, so the storage types are coded (named) on a dfa-state-respecting basis
+
+      // TODO 2.3 POST: on inet failure, retry or cleanup & unlock
       
       std::unique_ptr<base::Value> value(base::JSONReader::Read(post_resp));
       base::DictionaryValue* dict;
@@ -286,6 +284,10 @@ int main() {
       }
 
       conf_client.nonce = v->GetString();
+
+      // TODO Instead of pursuing true asynchronicity at this point, what we can do is sleep for a minute or two
+      //      and blow away any work to this point on failure
+      //      this solves the problem for now since the tokens have no value at this point
 
         //STEP 2.3
         // TODO this is done blocking and assumes success but we need to separate it more and account for the possibility of failures
@@ -382,13 +384,8 @@ int main() {
 
   // reporting ad viewed
   {
-    // TODO should we simply unblind signed tokens on receipt instead of waiting?
-    //      we probably should
-    //      we have to now basically because confirmations_ready_for_ad_showing now hinges on this
-
     conf_client.mutex.lock();
     conf_client.step_3_1a_unblindSignedBlindedConfirmations();
-
     conf_client.step_3_1b_generatePaymentTokenAndBlindIt();
 
     // // what's `t`? unblinded_signed_confirmation_token
@@ -759,7 +756,6 @@ int main() {
 
     std::string payload_json;
     base::JSONWriter::Write(payload, &payload_json);
-std::cerr << "payload_json: " << (payload_json) << "\n";
 
     base::ListValue * list = new base::ListValue();
 
@@ -800,16 +796,12 @@ std::cerr << "payload_json: " << (payload_json) << "\n";
                          NULL, NULL };
 
     std::string real_body = json;
-std::cerr << "real_body: " << (real_body) << "\n";
 
     conn.request("PUT", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
 
     while( conn.outstanding() ) conn.pump();
     std::string put_resp = happy_data;
     int put_resp_code = happy_status;
-
-std::cerr << "put_resp: " << (put_resp) << "\n";
-
 
     if (put_resp_code == 200) {
       // NB. this still has the potential to carry an error key
@@ -848,7 +840,6 @@ std::cerr << "put_resp: " << (put_resp) << "\n";
             std::cerr << "5.1 no txn id" << "\n";
             abort();
           }
-std::cerr << "transaction_id: " << (transaction_id) << "\n";
 
         }
 

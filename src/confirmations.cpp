@@ -29,8 +29,14 @@ namespace bat_native_confirmations {
 
 
   bool Confirmations::confirmations_ready_for_ad_showing() {
-    // TODO this isn't right
-    return (unblinded_signed_confirmation_token.size() > 0);
+
+    // TODO Whatever thread/service calls this in brave-core-client must also 
+    //      be the one that triggers ad showing, or we'll have a race condition
+    mutex.lock();
+    bool ready = (signed_blinded_confirmation_tokens.size() > 0);
+    mutex.unlock();
+
+    return ready;
   }
 
   void Confirmations::step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair, std::string payments_GH_pair, std::vector<std::string> bat_names, std::vector<std::string> bat_keys) {
@@ -54,7 +60,6 @@ namespace bat_native_confirmations {
   }
 
   void Confirmations::step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem() {
-
 
     if (blinded_confirmation_tokens.size() > low_token_threshold) {
       return;
@@ -260,6 +265,7 @@ namespace bat_native_confirmations {
     dict.SetWithoutPathExpansion("unblinded_signed_payment_tokens", munge(unblinded_signed_payment_tokens));
     dict.SetKey("confirmation_id", base::Value(confirmation_id));
     dict.SetKey("estimated_payment_worth", base::Value(estimated_payment_worth));
+    dict.SetKey("nonce", base::Value(nonce));
 
     std::string json;
     base::JSONWriter::Write(dict, &json);
@@ -335,6 +341,9 @@ namespace bat_native_confirmations {
 
     if (!(v = dict->FindKey("estimated_payment_worth"))) return fail;
     this->estimated_payment_worth = v->GetString();
+
+    if (!(v = dict->FindKey("nonce"))) return fail;
+    this->nonce = v->GetString();
 
     return succeed;
   }

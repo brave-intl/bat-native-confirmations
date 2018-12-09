@@ -15,9 +15,11 @@ namespace bat_native_confirmations {
     const size_t low_token_threshold = 2; // 20 
     const size_t refill_amount = 1 * low_token_threshold; // 5
 
+    ////////////////////////////////////////
+    // persist these properties
     std::string issuers_version = "0"; // if unset or "0", assume we haven't gotten one
     std::string server_confirmation_key;
-    std::string server_payment_key; // per amir,evq, this key isn't even supposed to exist
+    std::string server_payment_key; // per amir,evq, this key isn't even supposed to exist. we overload it I think
     std::vector<std::string> server_bat_payment_names;
     std::vector<std::string> server_bat_payment_keys;
 
@@ -34,9 +36,9 @@ namespace bat_native_confirmations {
     std::string confirmation_id;
     std::string estimated_payment_worth;
 
-    ////////////////////////////////////////
     std::string nonce;
     ////////////////////////////////////////
+
     void test();
     bool confirmations_ready_for_ad_showing();
     void step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair,
