@@ -491,11 +491,11 @@ int main() {
 
     // TODO guessing we're going to have to store multiple confirmation_id ?
     // TODO this worth isn't actually returned here, but at the next GET step
-    conf_client.step_3_2_storeConfirmationIdAndWorth(confirmation_id, mock_worth);
+    conf_client.step_3_2_storeConfirmationId(confirmation_id);
     conf_client.mutex.unlock();
   }
 
-  if (pay_invoices)
+  if (pay_invoices) // for testing purposes, mark invoices paid on server
   {  
     // access token can be created using `/auth/token`
     // tokens will expire after an hour

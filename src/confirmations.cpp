@@ -136,13 +136,12 @@ namespace bat_native_confirmations {
     std::cout << "step3.1b: generate payment, count: " << original_confirmation_tokens.size() << std::endl;
   }
 
-  void Confirmations::step_3_2_storeConfirmationIdAndWorth(std::string confirmationId, std::string paymentWorth) {
+  void Confirmations::step_3_2_storeConfirmationId(std::string confirmationId) {
 
     this->confirmation_id = confirmationId;
-    this->estimated_payment_worth = paymentWorth;
 
     this->saveState();
-    std::cout << "step3.2: store confirmationId and Worth" << std::endl;
+    std::cout << "step3.2: store confirmationId" << std::endl;
   }
 
   void Confirmations::step_4_2_storeSignedBlindedPaymentToken(std::string signedBlindedPaymentToken) {
@@ -164,6 +163,7 @@ namespace bat_native_confirmations {
       return;
     }
 
+    // TODO this can't be good. figure out how to remove old tokens based on success
     this->unblinded_signed_payment_tokens.clear();
 
     for (int i = 0; i < n; i++) {

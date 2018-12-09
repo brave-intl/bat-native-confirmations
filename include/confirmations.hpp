@@ -49,7 +49,7 @@ namespace bat_native_confirmations {
     void step_2_4_storeTheSignedBlindedConfirmations(std::vector<std::string> server_signed_blinded_confirmations);
     void step_3_1a_unblindSignedBlindedConfirmations();
     void step_3_1b_generatePaymentTokenAndBlindIt();
-    void step_3_2_storeConfirmationIdAndWorth(std::string confirmationId, std::string paymentWorth);
+    void step_3_2_storeConfirmationId(std::string confirmationId);
     void step_4_2_storeSignedBlindedPaymentToken(std::string signedBlindedPaymentToken);
     void step_5_1_unblindSignedBlindedPayments();
     void step_5_2_storeTransactionIdsAndActualPayment();
