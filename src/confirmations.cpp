@@ -6,6 +6,10 @@
 
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/base64.h"
+#include "base/guid.h"
+#include "base/time/time.h"
+#include "net/base/escape.h"
 
 #include "tweetnacl.h"
 #include <openssl/base64.h>
@@ -66,7 +70,7 @@ namespace bat_native_confirmations {
     return ready;
   }
 
-  void Confirmations::step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair, std::string payments_GH_pair, std::vector<std::string> bat_names, std::vector<std::string> bat_keys) {
+  void Confirmations::step_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair, std::string payments_GH_pair, std::vector<std::string> bat_names, std::vector<std::string> bat_keys) {
     // This (G,H) *pair* is exposed as a *single* string via the rust lib
     // G is the generator the server used in H, see next line
     // H, aka Y, is xG, the server's public key
@@ -273,12 +277,15 @@ namespace bat_native_confirmations {
      } // 2.1
   }
 
-  void Confirmations::step_3_1a_unblindSignedBlindedConfirmations() {
+
+  void Confirmations::step_3_redeemConfirmation(std::string real_creative_instance_id) {
 
     if (this->signed_blinded_confirmation_tokens.size() <= 0) {
-      std::cout << "ERROR: step_3_1a, no signed blinded confirmation tokens" << std::endl;
+      std::cout << "ERROR: step 3.1a, no signed blinded confirmation tokens" << std::endl;
       return;
     }
+
+    std::cout << "step3.1a: unblinding signed blinded confirmations" << std::endl;
 
     std::string orig_token_b64 = this->original_confirmation_tokens.front();
     std::string sb_token_b64 = this->signed_blinded_confirmation_tokens.front();
@@ -290,17 +297,17 @@ namespace bat_native_confirmations {
     UnblindedToken client_unblinded_token = restored_token.unblind(signed_token);
     // dehydrate  
     std::string base64_unblinded_token = client_unblinded_token.encode_base64();
-    // put on object
-    this->unblinded_signed_confirmation_token = base64_unblinded_token;
-    // persist?
+
+    std::string local_unblinded_signed_confirmation_token = base64_unblinded_token;
+
+    // we're doing this here instead of doing it on success and tracking success/failure
+    // since it's cheaper development wise. but optimization wise, it "wastes" a (free) confirmation
+    // token on failure
+    this->popFrontConfirmation();
+    // persist
     this->saveState();
 
-    std::cout << "step3.1a: unblinding signed blinded confirmations" << std::endl;
-  }
-
-  void Confirmations::step_3_1b_generatePaymentTokenAndBlindIt() {
-
-    // see also: Confirmations::step_2_1_batchGenerateConfirmationTokensAndBlindThem()
+    std::cout << "step3.1b: generate payment, count: " << original_confirmation_tokens.size() << std::endl;
 
     // client prepares a random token and blinding scalar pair
     Token token = Token::random();
@@ -310,34 +317,302 @@ namespace bat_native_confirmations {
     BlindedToken blinded_token = token.blind();
     std::string blinded_token_base64 = blinded_token.encode_base64();
 
-    // client stores the original token and the blinded token
-    // will send blinded token to server
-    this->original_payment_tokens.push_back(token_base64);
-    this->blinded_payment_tokens.push_back(blinded_token_base64);
+    std::string local_original_payment_token = token_base64;
+    std::string local_blinded_payment_token = blinded_token_base64;
+
+    // // what's `t`? local_unblinded_signed_confirmation_token
+    // // what's `MAC_{sk}(R)`? item from blinded_payment_tokens
+
+    std::string prePaymentToken = local_blinded_payment_token; 
+    std::string json;
     
-    this->saveState();
-    std::cout << "step3.1b: generate payment, count: " << original_confirmation_tokens.size() << std::endl;
+    // build body of POST request
+    base::DictionaryValue dict;
+    dict.SetKey("creativeInstanceId", base::Value(real_creative_instance_id));
+    dict.SetKey("payload", base::Value(base::Value::Type::DICTIONARY));
+    dict.SetKey("prePaymentToken", base::Value(prePaymentToken));
+    dict.SetKey("type", base::Value("landed"));
+    base::JSONWriter::Write(dict, &json);
+
+    UnblindedToken restored_unblinded_token = UnblindedToken::decode_base64(local_unblinded_signed_confirmation_token);
+    VerificationKey client_vKey = restored_unblinded_token.derive_verification_key();
+    std::string message = json;
+    VerificationSignature client_sig = client_vKey.sign(message);
+
+    std::string base64_token_preimage = restored_unblinded_token.preimage().encode_base64();
+    std::string base64_signature = client_sig.encode_base64();
+
+    base::DictionaryValue bundle;
+    std::string credential_json;
+    bundle.SetKey("payload", base::Value(json));
+    bundle.SetKey("signature", base::Value(base64_signature));
+    bundle.SetKey("t", base::Value(base64_token_preimage));
+    base::JSONWriter::Write(bundle, &credential_json);
+
+    std::vector<uint8_t> vec(credential_json.begin(), credential_json.end());
+    std::string b64_encoded_a = this->getBase64(vec);
+
+    std::string b64_encoded;
+    base::Base64Encode(credential_json, &b64_encoded);
+
+    DCHECK(b64_encoded_a == b64_encoded);
+
+    std::string uri_encoded = net::EscapeQueryParamValue(b64_encoded, true);
+
+    // 3 pieces we need for our POST request, 1 for URL, 1 for body, and 1 for URL that depends on body
+    std::string confirmation_id = base::GenerateGUID();
+    std::string real_body = json;
+    std::string credential = uri_encoded;
+
+    ///////////////////////////////////////////////////////////////////////
+    // step_3_1c POST /v1/confirmation/{confirmation_id}/{credential}, which is (t, MAC_(sk)(R))
+    std::cout << "step3.1c: POST /v1/confirmation/{confirmation_id}/{credential} " << confirmation_id << std::endl;
+    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+    std::string endpoint = std::string("/v1/confirmation/").append(confirmation_id).append("/").append(credential);
+    
+    // -d "{ \"creativeInstanceId\": \"6ca04e53-2741-4d62-acbb-e63336d7ed46\", \"payload\": {}, \"prePaymentToken\": \"cgILwnP8ua+cZ+YHJUBq4h+U+mt6ip8lX9hzElHrSBg=\", \"type\": \"landed\" }"
+    const char * h[] = {"accept", "application/json",
+                        "Content-Type", "application/json",
+                        NULL, NULL };
+
+    conn.request("POST", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
+
+    while( conn.outstanding() ) conn.pump();
+    std::string post_resp = happy_data;
+    ///////////////////////////////////////////////////////////////////////
+
+    if (happy_status == 201) {  // 201 - created
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
+      base::DictionaryValue* dict;
+      if (!value->GetAsDictionary(&dict)) {
+        std::cerr << "no 3.1c resp dict" << "\n";
+        return;
+      }
+
+      base::Value *v;
+      if (!(v = dict->FindKey("id"))) {
+        std::cerr << "3.1c could not get id\n";
+        return;
+      }
+
+      std::string id31 = v->GetString();
+      DCHECK(confirmation_id == id31);
+
+      //check return code, check json for `id` key
+      //for bundle:
+      //  ✓ confirmation_id
+      //  ✓ local_original_payment_token
+      //  ✓ local_blinded_payment_token - we do need: for DLEQ proof
+
+      std::string timestamp = std::to_string(base::Time::NowFromSystemTime().ToTimeT());
+
+      std::cout << "step3.2 : store confirmationId &such" << std::endl;
+      base::DictionaryValue bundle;
+      bundle.SetKey("confirmation_id", base::Value(confirmation_id));
+      bundle.SetKey("original_payment_token", base::Value(local_original_payment_token));
+      bundle.SetKey("blinded_payment_token", base::Value(local_blinded_payment_token));
+      bundle.SetKey("bundle_timestamp", base::Value(timestamp));
+
+      std::string bundle_json;
+      base::JSONWriter::Write(bundle, &bundle_json);
+      this->payment_token_json_bundles.push_back(bundle_json);
+      this->saveState();
+    }
   }
 
-  void Confirmations::step_3_2_storeConfirmationId(std::string confirmationId) {
+  void Confirmations::processIOUBundle(std::string bundle_json) {
 
-    this->confirmation_id = confirmationId;
+    std::string confirmation_id;
+    std::string original_payment_token;
+    std::string blinded_payment_token;
 
-    this->saveState();
-    std::cout << "step3.2 : store confirmationId" << std::endl;
+    std::unique_ptr<base::Value> bundle_value(base::JSONReader::Read(bundle_json));
+    base::DictionaryValue* map;
+    if (!bundle_value->GetAsDictionary(&map)) {
+      std::cerr << "no 4 process iou bundle dict" << "\n";
+      return;
+    }
+
+    base::Value *u;
+
+    if (!(u = map->FindKey("confirmation_id"))) {
+      std::cerr << "4 process iou bundle, could not get confirmation_id\n";
+      return;
+    }
+    confirmation_id = u->GetString();
+
+    if (!(u = map->FindKey("original_payment_token"))) {
+      std::cerr << "4 process iou bundle, could not get original_payment_token\n";
+      return;
+    }
+    original_payment_token = u->GetString();
+ 
+    if (!(u = map->FindKey("blinded_payment_token"))) {
+      std::cerr << "4 process iou bundle, could not get blinded_payment_token\n";
+      return;
+    }
+    blinded_payment_token = u->GetString();
+  
+    // 4.1 GET /v1/confirmation/{confirmation_id}/paymentToken
+    std::cout << "step4.1 : GET /v1/confirmation/{confirmation_id}/paymentToken" << std::endl;
+ 
+    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+ 
+    std::string endpoint = std::string("/v1/confirmation/").append(confirmation_id).append("/paymentToken");
+     
+    conn.request("GET", endpoint.c_str());
+ 
+    while( conn.outstanding() ) conn.pump();
+ 
+    int get_resp_code = happy_status;
+    std::string get_resp = happy_data;
+
+    if (!(get_resp_code == 200 || get_resp_code == 202))  { 
+      // something broke before server could decide paid:true/false
+      // TODO inet failure: retry or cleanup & unlock
+      return;
+    }
+
+    // 2018.12.10 apparently, server side has changed to always pay tokens, so we won't recv 202 response?
+    if (get_resp_code == 202) { // paid:false response
+      // 1. collect estimateToken from JSON
+      // 2. derive estimate
+
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
+      base::DictionaryValue* dict;
+      if (!value->GetAsDictionary(&dict)) {
+        std::cerr << "4.1 202 no dict" << "\n";
+        return;
+      }
+
+      base::Value *v;
+      if (!(v = dict->FindKey("estimateToken"))) {
+        std::cerr << "4.1 202 no estimateToken\n";
+        return;
+      }
+
+      base::DictionaryValue* et;
+      if (!v->GetAsDictionary(&et)) {
+        std::cerr << "4.1 202 no eT dict" << "\n";
+        return;
+      }
+
+      if (!(v = et->FindKey("publicKey"))) {
+        std::cerr << "4.1 202 no publicKey\n";
+        return;
+      }
+
+      std::string token = v->GetString();
+      std::string name = this->BATNameFromBATPublicKey(token);
+      if (name != "") {
+        // TODO
+        this->estimated_payment_worth = name;
+      } else {
+        std::cerr << "Step 4.1 202 verification empty name \n";
+      }
+
+      return;
+    }
+ 
+    if (get_resp_code == 200) { // paid:true response
+      base::Value *v;
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
+      base::DictionaryValue* dict;
+      if (!value->GetAsDictionary(&dict)) {
+        std::cerr << "4.1 200 no dict" << "\n";
+        return;
+      }
+
+      if (!(v = dict->FindKey("id"))) {
+        std::cerr << "4.1 200 no id\n";
+        return;
+      }
+      std::string id = v->GetString();
+
+      if (!(v = dict->FindKey("paymentToken"))) {
+        std::cerr << "4.1 200 no paymentToken\n";
+        return;
+      }
+
+      base::DictionaryValue* pt;
+      if (!v->GetAsDictionary(&pt)) {
+        std::cerr << "4.1 200 no pT dict" << "\n";
+        return;
+      }
+
+      if (!(v = pt->FindKey("publicKey"))) {
+        std::cerr << "4.1 200 no publicKey\n";
+        return;
+      }
+      std::string publicKey = v->GetString();
+
+      if (!(v = pt->FindKey("batchProof"))) {
+        std::cerr << "4.1 200 no batchProof\n";
+        return;
+      }
+      std::string batchProof = v->GetString();
+
+      if (!(v = pt->FindKey("signedTokens"))) {
+        std::cerr << "4.1 200 could not get signedTokens\n";
+        return;
+      }
+
+      base::ListValue signedTokensList(v->GetList());
+      std::vector<std::string> signedBlindedTokens = {};
+
+      if (signedTokensList.GetSize() != 1) {
+        std::cerr << "4.1 200 currently unsupported size for signedTokens array\n";
+        return;
+      }
+
+      for (size_t i = 0; i < signedTokensList.GetSize(); i++) {
+        base::Value *x;
+        signedTokensList.Get(i, &x);
+        signedBlindedTokens.push_back(x->GetString());
+      }
+
+      std::vector<std::string> local_blinded_payment_tokens = {blinded_payment_token};
+
+      bool real_verified = this->verifyBatchDLEQProof(batchProof, 
+                                                      local_blinded_payment_tokens,
+                                                      signedBlindedTokens,
+                                                      publicKey);
+      if (!real_verified) {
+        //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
+        std::cerr << "ERROR: Real payment proof invalid" << std::endl;
+      }
+
+      for (auto signedBlindedPaymentToken : signedBlindedTokens) {
+        std::cout << "step4.2 : store signed blinded payment token" << std::endl;
+        this->signed_blinded_payment_tokens.push_back(signedBlindedPaymentToken);
+        this->saveState();
+      }
+
+      std::string name = this->BATNameFromBATPublicKey(publicKey);
+      if (name != "") {
+        // TODO we're calling this `estimated`, but it should be `actual` ?
+        this->estimated_payment_worth = name;
+        this->server_payment_key = publicKey;
+      } else {
+        std::cerr << "Step 4.1/4.2 200 verification empty name \n";
+      }
+    } 
+    
   }
 
-  void Confirmations::step_4_2_storeSignedBlindedPaymentToken(std::string signedBlindedPaymentToken) {
-
-    this->signed_blinded_payment_tokens.push_back(signedBlindedPaymentToken);
-
-    this->saveState();
-    std::cout << "step4.2 : store signed blinded payment" << std::endl;
+  void Confirmations::step_4_retrievePaymentIOUs() {
+    // we cycle through this multiple times until the token is marked paid
+    for (auto payment_bundle_json : this->payment_token_json_bundles) {
+      processIOUBundle(payment_bundle_json);
+    }
   }
 
   void Confirmations::step_5_1_unblindSignedBlindedPayments() {
 
-    // see also Confirmations::step_3_1a_unblindSignedBlindedConfirmations() {
+    std::cout << "step5.1 : unblind signed blinded payments" << std::endl;
 
     int n = this->signed_blinded_payment_tokens.size();
 
@@ -366,8 +641,6 @@ namespace bat_native_confirmations {
 
     // persist?
     this->saveState();
-
-    std::cout << "step5.1 : unblind signed blinded payments" << std::endl;
   }
 
   void Confirmations::step_5_2_storeTransactionIdsAndActualPayment() {
@@ -441,7 +714,7 @@ namespace bat_native_confirmations {
     dict.SetWithoutPathExpansion("original_confirmation_tokens", munge(original_confirmation_tokens));
     dict.SetWithoutPathExpansion("blinded_confirmation_tokens", munge(blinded_confirmation_tokens));
     dict.SetWithoutPathExpansion("signed_blinded_confirmation_tokens", munge(signed_blinded_confirmation_tokens));
-    dict.SetKey("unblinded_signed_confirmation_token", base::Value(unblinded_signed_confirmation_token));
+    dict.SetWithoutPathExpansion("payment_token_json_bundles", munge(payment_token_json_bundles));
     dict.SetWithoutPathExpansion("original_payment_tokens", munge(original_payment_tokens));
     dict.SetWithoutPathExpansion("blinded_payment_tokens", munge(blinded_payment_tokens));
     dict.SetWithoutPathExpansion("signed_blinded_payment_tokens", munge(signed_blinded_payment_tokens));
@@ -502,9 +775,6 @@ namespace bat_native_confirmations {
 
     if (!(v = dict->FindKey("signed_blinded_confirmation_tokens"))) return fail;
     this->signed_blinded_confirmation_tokens = unmunge(v);
-
-    if (!(v = dict->FindKey("unblinded_signed_confirmation_token"))) return fail;
-    this->unblinded_signed_confirmation_token = v->GetString();
 
     if (!(v = dict->FindKey("original_payment_tokens"))) return fail;
     this->original_payment_tokens = unmunge(v);

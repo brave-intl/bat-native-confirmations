@@ -31,37 +31,36 @@ class Confirmations {
     // persist these properties
     std::string issuers_version = "0"; // if unset or "0", assume we haven't gotten one
     std::string server_confirmation_key; // 2018.12.10 If this changes what we can do is burn .*confirmation_tokens.* & repop
-    std::string server_payment_key; // per amir,evq, this key isn't even supposed to exist. we overload it I think
+    std::string server_payment_key; // per amir,evq, this key isn't even supposed to exist. we overload it I think?
     std::vector<std::string> server_bat_payment_names;
     std::vector<std::string> server_bat_payment_keys;
 
     std::vector<std::string>       original_confirmation_tokens;
     std::vector<std::string>        blinded_confirmation_tokens;
     std::vector<std::string> signed_blinded_confirmation_tokens;
-    std::string             unblinded_signed_confirmation_token;
 
-    std::vector<std::string>            original_payment_tokens;
-    std::vector<std::string>             blinded_payment_tokens;
+    std::vector<std::string> payment_token_json_bundles;
+
+    std::string estimated_payment_worth;                         // TODO marked for death
+    std::string confirmation_id;                                 // TODO marked for death (must mv step 4 first)
+    std::vector<std::string>            original_payment_tokens; // TODO marked for death (must fix step 5 first)
+    std::vector<std::string>             blinded_payment_tokens; // TODO marked for death (must mv step 4 first)
     std::vector<std::string>      signed_blinded_payment_tokens;
-    std::vector<std::string>    unblinded_signed_payment_tokens;
+    std::vector<std::string>    unblinded_signed_payment_tokens; 
     
-    std::string confirmation_id;
-    std::string estimated_payment_worth;
     ////////////////////////////////////////
 
     void test();
     bool confirmations_ready_for_ad_showing();
-    void step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair,
-                                                                    std::string payments_GH_pair,
-                                                                    std::vector<std::string> bat_names,
-                                                                    std::vector<std::string> bat_keys);
+    void step_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair,
+                                                                  std::string payments_GH_pair,
+                                                                  std::vector<std::string> bat_names,
+                                                                  std::vector<std::string> bat_keys);
     void step_2_refillConfirmationsIfNecessary(std::string real_wallet_address,
                                                std::string real_wallet_address_secret_key,
                                                std::string server_confirmation_key);
-    void step_3_1a_unblindSignedBlindedConfirmations();
-    void step_3_1b_generatePaymentTokenAndBlindIt();
-    void step_3_2_storeConfirmationId(std::string confirmationId);
-    void step_4_2_storeSignedBlindedPaymentToken(std::string signedBlindedPaymentToken);
+    void step_3_redeemConfirmation(std::string real_creative_instance_id);
+    void step_4_retrievePaymentIOUs();
     void step_5_1_unblindSignedBlindedPayments();
     void step_5_2_storeTransactionIdsAndActualPayment();
 
@@ -78,6 +77,7 @@ class Confirmations {
     bool fromJSONString(std::string json);
     std::vector<std::string> unmunge(base::Value *value);
     std::string BATNameFromBATPublicKey(std::string token);
+    void processIOUBundle(std::string bundle_json);
 
     //convert std::string of ascii-hex to raw data vector<uint8_t>
     std::vector<uint8_t> rawDataBytesVectorFromASCIIHexString(std::string ascii);

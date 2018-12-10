@@ -4,7 +4,6 @@
 #include <cstdlib>
 #include "wrapper.hpp"
 #include "confirmations.hpp"
-#include "base/guid.h"
 #include "happyhttp.h"
 
 #include "base/json/json_reader.h"
@@ -12,6 +11,7 @@
 
 #include "net/base/escape.h"
 #include "base/base64.h"
+#include "base/guid.h"
 #include "base/environment.h"
 
 std::string happy_data; 
@@ -160,19 +160,24 @@ int main() {
       }
     }
 
-    //so now all our mock data is ready to go for step_1_1 below (it's populated with the return from the server)
+    //so now all our mock data is ready to go for step_1 below (it's populated with the return from the server)
   }
 
   // TODO: hook up into brave-core client / bat-native-ads: this will get called by bat-native-ads when it downloads the ad catalog w/ keys (once only for now?)
   // NOTE: this call can block! it waits on a mutex to unlock. generally all these `step_#_#` calls will
+  // step 1
   {
     conf_client.mutex.lock();
-    conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(real_confirmations_public_key, real_payments_public_key, real_bat_names, real_bat_keys);
+    conf_client.step_1_storeTheServersConfirmationsPublicKeyAndGenerator(real_confirmations_public_key,
+                                                                         real_payments_public_key,
+                                                                         real_bat_names,
+                                                                         real_bat_keys);
     conf_client.mutex.unlock();
   }
 
   // TODO: hook up into brave-core client / bat-native-ads: this should happen on launch (in the background) and on loop/timer (in the background)
   // TODO: hook up into brave-core client / bat-native-ads: we'll need to not show ads whenever we're out of tokens use: conf_client.confirmations_ready_for_ad_showing(); to test
+  // step 2
   {
     conf_client.mutex.lock();
     conf_client.step_2_refillConfirmationsIfNecessary(real_wallet_address,
@@ -218,116 +223,10 @@ int main() {
 
   }
 
-  // reporting ad viewed
+  // step 3 - reporting ad viewed
   {
     conf_client.mutex.lock();
-    conf_client.step_3_1a_unblindSignedBlindedConfirmations();
-    conf_client.step_3_1b_generatePaymentTokenAndBlindIt();
-
-    // // what's `t`? unblinded_signed_confirmation_token
-    // std::cerr << "unblinded_signed_confirmation_token: " << (conf_client.unblinded_signed_confirmation_token) << "\n";
-    // // what's `MAC_{sk}(R)`? item from blinded_payment_tokens
-    // std::cerr << "blinded_payment_tokens: " << (conf_client.blinded_payment_tokens[0]) << "\n";
-
-    std::string usct = conf_client.unblinded_signed_confirmation_token;
-    std::string bpt = conf_client.blinded_payment_tokens[0];
-
-    std::string prePaymentToken = bpt; 
-
-    std::string json;
-    
-    // build body of POST request
-    base::DictionaryValue dict;
-    dict.SetKey("creativeInstanceId", base::Value(real_creative_instance_id));
-    dict.SetKey("payload", base::Value(base::Value::Type::DICTIONARY));
-    dict.SetKey("prePaymentToken", base::Value(prePaymentToken));
-    dict.SetKey("type", base::Value("landed"));
-    base::JSONWriter::Write(dict, &json);
-
-    UnblindedToken restored_unblinded_token = UnblindedToken::decode_base64(usct);
-    VerificationKey client_vKey = restored_unblinded_token.derive_verification_key();
-    std::string message = json;
-    VerificationSignature client_sig = client_vKey.sign(message);
-
-    std::string base64_token_preimage = restored_unblinded_token.preimage().encode_base64();
-    std::string base64_signature = client_sig.encode_base64();
-
-    base::DictionaryValue bundle;
-    std::string credential_json;
-    bundle.SetKey("payload", base::Value(json));
-    bundle.SetKey("signature", base::Value(base64_signature));
-    bundle.SetKey("t", base::Value(base64_token_preimage));
-    base::JSONWriter::Write(bundle, &credential_json);
-
-    std::vector<uint8_t> vec(credential_json.begin(), credential_json.end());
-    std::string b64_encoded_a = conf_client.getBase64(vec);
-
-    std::string b64_encoded;
-    base::Base64Encode(credential_json, &b64_encoded);
-
-    DCHECK(b64_encoded_a == b64_encoded);
-
-    std::string uri_encoded = net::EscapeQueryParamValue(b64_encoded, true);
-
-    // 3 pieces we need for our POST request, 1 for URL, 1 for body, and 1 for URL that depends on body
-    std::string confirmation_id = base::GenerateGUID();
-    std::string real_body = json;
-    std::string credential = uri_encoded;
-
-    ///////////////////////////////////////////////////////////////////////
-    // step_3_1c POST /v1/confirmation/{confirmation_id}/{credential}, which is (t, MAC_(sk)(R))
-    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
-    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
-
-    std::string endpoint = std::string("/v1/confirmation/").append(confirmation_id).append("/").append(credential);
-    
-    // -d "{ \"creativeInstanceId\": \"6ca04e53-2741-4d62-acbb-e63336d7ed46\", \"payload\": {}, \"prePaymentToken\": \"cgILwnP8ua+cZ+YHJUBq4h+U+mt6ip8lX9hzElHrSBg=\", \"type\": \"landed\" }"
-    const char * h[] = {
-                        "accept", "application/json",
-                        "Content-Type", "application/json",
-                        NULL, NULL };
-
-    conn.request("POST", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
-
-    while( conn.outstanding() ) conn.pump();
-    std::string post_resp = happy_data;
-    ///////////////////////////////////////////////////////////////////////
-
-    bool success = false;
-
-    if (happy_status == 201) {  // 201 - created
-      std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
-      base::DictionaryValue* dict;
-      if (!value->GetAsDictionary(&dict)) {
-        std::cerr << "no 3.1c resp dict" << "\n";
-        abort();
-      }
-
-      base::Value *v;
-      if (!(v = dict->FindKey("id"))) {
-        success = false;
-        std::cerr << "3.1c could not get id\n";
-      }
-      else {
-        std::string id31 = v->GetString();
-        DCHECK(confirmation_id == id31);
-        success = true;
-      }
-    }
-
-    //check return code, check json for `id` key
-
-    if(success) {
-      // on success, pop fronts: 
-      conf_client.popFrontConfirmation();
-    } else {
-      // TODO on inet failure, retry or cleanup & unlock
-    }
-
-
-    // TODO guessing we're going to have to store multiple confirmation_id ?
-    // TODO this worth isn't actually returned here, but at the next GET step
-    conf_client.step_3_2_storeConfirmationId(confirmation_id);
+    conf_client.step_3_redeemConfirmation(real_creative_instance_id);
     conf_client.mutex.unlock();
   }
 
@@ -405,166 +304,36 @@ int main() {
     
   }
 
-  // retrieve payment IOU
-  // TODO: we cycle through this multiple times until the token is marked paid
+  // retrieve payment IOUs
+  // step 4
   {
     conf_client.mutex.lock();
-
-    // 4.1 GET /v1/confirmation/{confirmation_id}/paymentToken
-
-    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
-    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
-
-    std::string endpoint = std::string("/v1/confirmation/").append(conf_client.confirmation_id).append("/paymentToken");
-    
-    conn.request("GET", endpoint.c_str());
-
-    while( conn.outstanding() ) conn.pump();
-
-    int get_resp_code = happy_status;
-    std::string get_resp = happy_data;
-
-    if (get_resp_code == 200) { // paid:true response
-      base::Value *v;
-      std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
-      base::DictionaryValue* dict;
-      if (!value->GetAsDictionary(&dict)) {
-        std::cerr << "4.1 200 no dict" << "\n";
-        abort();
-      }
-
-      if (!(v = dict->FindKey("id"))) {
-        std::cerr << "4.1 200 no id\n";
-        abort();
-      }
-      std::string id = v->GetString();
-
-
-      if (!(v = dict->FindKey("paymentToken"))) {
-        std::cerr << "4.1 200 no paymentToken\n";
-        abort();
-      }
-
-      base::DictionaryValue* pt;
-      if (!v->GetAsDictionary(&pt)) {
-        std::cerr << "4.1 200 no pT dict" << "\n";
-        abort();
-      }
-
-      if (!(v = pt->FindKey("publicKey"))) {
-        std::cerr << "4.1 200 no publicKey\n";
-        abort();
-      }
-      std::string publicKey = v->GetString();
-
-      if (!(v = pt->FindKey("batchProof"))) {
-        std::cerr << "4.1 200 no batchProof\n";
-        abort();
-      }
-      std::string batchProof = v->GetString();
-
-      if (!(v = pt->FindKey("signedTokens"))) {
-        std::cerr << "4.1 200 could not get signedTokens\n";
-        abort();
-      }
-
-      base::ListValue signedTokensList(v->GetList());
-      std::vector<std::string> signedBlindedTokens = {};
-
-      for (size_t i = 0; i < signedTokensList.GetSize(); i++) {
-        base::Value *x;
-        signedTokensList.Get(i, &x);
-        signedBlindedTokens.push_back(x->GetString());
-      }
-
-      for (auto signedBlindedToken : signedBlindedTokens) {
-        conf_client.step_4_2_storeSignedBlindedPaymentToken(signedBlindedToken);
-      }
-
-      // for (auto bpt :conf_client.blinded_payment_tokens) { std::cerr << "bpt: " << (bpt) << "\n"; }
-      // for (auto sbpt :conf_client.signed_blinded_payment_tokens) { std::cerr << "sbpt: " << (sbpt) << "\n"; }
-
-
-      // mock_server.generateSignedBlindedTokensAndProof(conf_client.blinded_payment_tokens);
-      // mock_sbp = mock_server.signed_tokens;
-      // mock_sbp_token = mock_sbp.front();
-      // mock_payment_proof = mock_server.batch_dleq_proof;
-
-      // conf_client.step_4_2_storeSignedBlindedPaymentToken(mock_sbp_token);
-
-      // bool mock_verified = conf_client.verifyBatchDLEQProof(mock_payment_proof, 
-      //                                                 conf_client.blinded_payment_tokens,
-      //                                                 conf_client.signed_blinded_payment_tokens,
-      //                                                 mock_payments_public_key);
-      // if (!mock_verified) {
-      //   //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
-      //   std::cerr << "ERROR: Mock payment proof invalid" << std::endl;
-      // }
-
-      bool real_verified = conf_client.verifyBatchDLEQProof(batchProof, 
-                                                      conf_client.blinded_payment_tokens,
-                                                      conf_client.signed_blinded_payment_tokens,
-                                                      publicKey);
-      if (!real_verified) {
-        //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
-        std::cerr << "ERROR: Real payment proof invalid" << std::endl;
-      }
-
-      std::string name = conf_client.BATNameFromBATPublicKey(publicKey);
-      if (name != "") {
-        // TODO we're calling this `estimated`, but it should be `actual` ?
-        conf_client.estimated_payment_worth = name;
-        conf_client.server_payment_key = publicKey;
-      } else {
-        std::cerr << "Step 4.1/4.2 200 verification empty name \n";
-      }
-
-    } else if (get_resp_code == 202) { // paid:false response
-      // 1. collect estimateToken from JSON
-      // 2. derive estimate
-
-      std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
-      base::DictionaryValue* dict;
-      if (!value->GetAsDictionary(&dict)) {
-        std::cerr << "4.1 202 no dict" << "\n";
-        abort();
-      }
-
-      base::Value *v;
-      if (!(v = dict->FindKey("estimateToken"))) {
-        std::cerr << "4.1 202 no estimateToken\n";
-        abort();
-      }
-
-      base::DictionaryValue* et;
-      if (!v->GetAsDictionary(&et)) {
-        std::cerr << "4.1 202 no eT dict" << "\n";
-        abort();
-      }
-
-      if (!(v = et->FindKey("publicKey"))) {
-        std::cerr << "4.1 202 no publicKey\n";
-        abort();
-      }
-
-      std::string token = v->GetString();
-      std::string name = conf_client.BATNameFromBATPublicKey(token);
-      if (name != "") {
-        conf_client.estimated_payment_worth = name;
-      } else {
-        std::cerr << "Step 4.1 202 verification empty name \n";
-      }
-
-    } else { // something broke before server could decide paid:true/false
-      // TODO inet failure: retry or cleanup & unlock
-    }
-
+    conf_client.step_4_retrievePaymentIOUs();
     conf_client.mutex.unlock();
   }
 
+  // step 4 mock
+  {
+    // mock_server.generateSignedBlindedTokensAndProof(this->blinded_payment_tokens);
+    // mock_sbp = mock_server.signed_tokens;
+    // mock_sbp_token = mock_sbp.front();
+    // mock_payment_proof = mock_server.batch_dleq_proof;
+
+    // this->step_4_2_storeSignedBlindedPaymentToken(mock_sbp_token);
+
+    // bool mock_verified = this->verifyBatchDLEQProof(mock_payment_proof, 
+    //                                                 this->blinded_payment_tokens,
+    //                                                 this->signed_blinded_payment_tokens,
+    //                                                 mock_payments_public_key);
+    // if (!mock_verified) {
+    //   //2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
+    //   std::cerr << "ERROR: Mock payment proof invalid" << std::endl;
+    // }
+  }
 
   // cash-in payment IOU
   // we may want to do this in conjunction with the previous retrieval step
+  // step 5
   {
     conf_client.mutex.lock();
     conf_client.step_5_1_unblindSignedBlindedPayments();
