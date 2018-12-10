@@ -613,14 +613,14 @@ namespace bat_native_confirmations {
     }
   }
 
-  void Confirmations::step_5_1_unblindSignedBlindedPayments() {
+  void Confirmations::step_5_cashInPayments(std::string real_wallet_address) {
 
     std::cout << "step5.1 : unblind signed blinded payments" << std::endl;
 
     int n = this->signed_blinded_payment_tokens.size();
 
     if (n <= 0) {
-      std::cout << "ERROR: step_5_1, no signed blinded payment tokens" << std::endl;
+      std::cerr << "ERROR: step_5_1, no signed blinded payment tokens" << std::endl;
       return;
     }
 
@@ -628,6 +628,8 @@ namespace bat_native_confirmations {
     this->unblinded_signed_payment_tokens.clear();
 
     for (int i = 0; i < n; i++) {
+std::cerr << "i: " << (i) << "\n";
+std::cerr << "we're dying here because none of this obj state exists. use bundles?\n";
       std::string orig_token_b64 = this->original_payment_tokens[i];
       std::string sb_token_b64 = this->signed_blinded_payment_tokens[i];
 
@@ -640,16 +642,138 @@ namespace bat_native_confirmations {
       std::string base64_unblinded_token = client_unblinded_token.encode_base64();
       // put on object
       this->unblinded_signed_payment_tokens.push_back(base64_unblinded_token);
+std::cerr << "i finished: " << (i) << "\n";
     }
 
     // persist?
     this->saveState();
-  }
 
-  void Confirmations::step_5_2_storeTransactionIdsAndActualPayment() {
+    // TODO how long are we keeping these txn ids around? what is format of "actual payment" ? 
+    // TODO server_payment_key everywhere below likely needs to be replaced or revised
 
-    this->saveState();
+    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+    // PUT /v1/confirmation/token/{payment_id}
+    std::string endpoint = std::string("/v1/confirmation/payment/").append(real_wallet_address);
+
+    //{}->payload->{}->payment_id                               real_wallet_address
+    //{}->paymentCredentials->[]->{}->credential->{}->signature signature of payload
+    //{}->paymentCredentials->[]->{}->credential->{}->t         uspt
+    //{}->paymentCredentials->[]->{}->publicKey                 this->server_payment_key
+
+    std::string primary = "primary";
+    std::string pay_key = "paymentId";
+    std::string pay_val = real_wallet_address;
+
+    base::DictionaryValue payload;
+    payload.SetKey(pay_key, base::Value(pay_val));
+
+    std::string payload_json;
+    base::JSONWriter::Write(payload, &payload_json);
+
+    base::ListValue * list = new base::ListValue();
+
+    // TODO  each of these uspt's actually has its own associated public key
+    // TODO have brianjohnson/nejc/terry spot check this block to make sure new/::move/::unique_ptr usage is right
+    // TODO on success, clear out the list ... ? (sum up totals...?)
+    for (auto uspt: this->unblinded_signed_payment_tokens) {
+
+      UnblindedToken restored_unblinded_token = UnblindedToken::decode_base64(uspt);
+      VerificationKey client_vKey = restored_unblinded_token.derive_verification_key();
+      std::string message = payload_json;
+      VerificationSignature client_sig = client_vKey.sign(message);
+      std::string base64_signature = client_sig.encode_base64();
+      std::string base64_token_preimage = restored_unblinded_token.preimage().encode_base64();
+
+      base::DictionaryValue cred;
+      cred.SetKey("signature", base::Value(base64_signature));
+      cred.SetKey("t", base::Value(base64_token_preimage));
+      // cred.SetKey("t", base::Value(uspt));
+
+      base::DictionaryValue * dict = new base::DictionaryValue();
+      dict->SetKey("credential", std::move(cred));
+      dict->SetKey("publicKey", base::Value(this->server_payment_key));
+
+      list->Append(std::unique_ptr<base::DictionaryValue>(dict));
+    }
+
+    base::DictionaryValue sdict;
+    sdict.SetWithoutPathExpansion("paymentCredentials", std::unique_ptr<base::ListValue>(list));
+    //sdict.SetKey("payload", std::move(payload));
+    sdict.SetKey("payload", base::Value(payload_json));
+
+    std::string json;
+    base::JSONWriter::Write(sdict, &json);
+
+    const char * h[] = { "accept", "application/json",
+                         "Content-Type", "application/json",
+                         NULL, NULL };
+
+    std::string real_body = json;
+
+    conn.request("PUT", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
+
+    while( conn.outstanding() ) conn.pump();
+    std::string put_resp = happy_data;
+std::cerr << "happy_data: " << (happy_data) << "\n";
+    int put_resp_code = happy_status;
+std::cerr << "happy_status: " << (happy_status) << "\n";
+
+    if (put_resp_code == 200) {
+      // NB. this still has the potential to carry an error key
+
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(put_resp));
+
+      base::ListValue *list;
+      if (!value->GetAsList(&list)) {
+        std::cerr << "no list" << "\n";
+        abort();
+      }
+
+
+      for (size_t i = 0; i < list->GetSize(); i++) {
+        base::Value *x;
+        list->Get(i, &x);
+
+        base::DictionaryValue* dict;
+        if (!x->GetAsDictionary(&dict)) {
+          std::cerr << "no dict" << "\n";
+          abort();
+        }
+
+        if ((x = dict->FindKey("error"))) {
+          //error case 
+          std::string err = x->GetString();
+          std::cerr << "PUT error: " << err << "\n";
+        } else { 
+          // no error
+
+          std::string transaction_id;
+
+          if ((x = dict->FindKey("id"))) {
+            transaction_id = x->GetString();
+          } else {
+            std::cerr << "5.1 no txn id" << "\n";
+            abort();
+          }
+
+        }
+
+      }
+
+
+    } else {
+      // TODO on inet failure, retry or cleanup & unlock
+    }
+
+    // TODO
     std::cout << "step5.2 : store txn ids and actual payment" << std::endl;
+    this->saveState();
+    
+    // TODO actually, on success we pop payments equal to # retrieved, not just first:
+    //this->popFrontPayment();
+
   }
 
   bool Confirmations::verifyBatchDLEQProof(std::string proof_string,
@@ -834,7 +958,6 @@ namespace bat_native_confirmations {
     auto &c = this->signed_blinded_payment_tokens;
 
     a.erase(a.begin());
-    b.erase(b.begin());
     c.erase(c.begin());
   }
 

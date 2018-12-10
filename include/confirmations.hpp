@@ -56,8 +56,7 @@ class Confirmations {
                                                std::string server_confirmation_key);
     void step_3_redeemConfirmation(std::string real_creative_instance_id);
     void step_4_retrievePaymentIOUs();
-    void step_5_1_unblindSignedBlindedPayments();
-    void step_5_2_storeTransactionIdsAndActualPayment();
+    void step_5_cashInPayments(std::string real_wallet_address);
 
     bool verifyBatchDLEQProof(std::string proof_string, 
                               std::vector<std::string> blind_strings,
