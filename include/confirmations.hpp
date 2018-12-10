@@ -39,15 +39,10 @@ class Confirmations {
     std::vector<std::string>        blinded_confirmation_tokens;
     std::vector<std::string> signed_blinded_confirmation_tokens;
 
-    std::vector<std::string> payment_token_json_bundles;
-
-    std::string estimated_payment_worth;                         // TODO marked for death
-    std::string confirmation_id;                                 // TODO marked for death (must mv step 4 first)
+    std::vector<std::string>         payment_token_json_bundles;
     std::vector<std::string>            original_payment_tokens; // TODO marked for death (must fix step 5 first)
-    std::vector<std::string>             blinded_payment_tokens; // TODO marked for death (must mv step 4 first)
     std::vector<std::string>      signed_blinded_payment_tokens;
     std::vector<std::string>    unblinded_signed_payment_tokens; 
-    
     ////////////////////////////////////////
 
     void test();

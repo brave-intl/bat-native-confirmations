@@ -509,7 +509,8 @@ namespace bat_native_confirmations {
       std::string name = this->BATNameFromBATPublicKey(token);
       if (name != "") {
         // TODO
-        this->estimated_payment_worth = name;
+        std::string estimated_payment_worth = name;
+        std::cerr << "estimated_payment_worth: " << (estimated_payment_worth) << "\n";
       } else {
         std::cerr << "Step 4.1 202 verification empty name \n";
       }
@@ -594,7 +595,8 @@ namespace bat_native_confirmations {
       std::string name = this->BATNameFromBATPublicKey(publicKey);
       if (name != "") {
         // TODO we're calling this `estimated`, but it should be `actual` ?
-        this->estimated_payment_worth = name;
+        std::string estimated_payment_worth = name;
+        std::cerr << "estimated_payment_worth: " << (estimated_payment_worth) << "\n";
         this->server_payment_key = publicKey;
       } else {
         std::cerr << "Step 4.1/4.2 200 verification empty name \n";
@@ -606,6 +608,7 @@ namespace bat_native_confirmations {
   void Confirmations::step_4_retrievePaymentIOUs() {
     // we cycle through this multiple times until the token is marked paid
     for (auto payment_bundle_json : this->payment_token_json_bundles) {
+      // TODO remove bundles from the array on (bundle's) success
       processIOUBundle(payment_bundle_json);
     }
   }
@@ -716,11 +719,8 @@ namespace bat_native_confirmations {
     dict.SetWithoutPathExpansion("signed_blinded_confirmation_tokens", munge(signed_blinded_confirmation_tokens));
     dict.SetWithoutPathExpansion("payment_token_json_bundles", munge(payment_token_json_bundles));
     dict.SetWithoutPathExpansion("original_payment_tokens", munge(original_payment_tokens));
-    dict.SetWithoutPathExpansion("blinded_payment_tokens", munge(blinded_payment_tokens));
     dict.SetWithoutPathExpansion("signed_blinded_payment_tokens", munge(signed_blinded_payment_tokens));
     dict.SetWithoutPathExpansion("unblinded_signed_payment_tokens", munge(unblinded_signed_payment_tokens));
-    dict.SetKey("confirmation_id", base::Value(confirmation_id));
-    dict.SetKey("estimated_payment_worth", base::Value(estimated_payment_worth));
 
     std::string json;
     base::JSONWriter::Write(dict, &json);
@@ -779,20 +779,11 @@ namespace bat_native_confirmations {
     if (!(v = dict->FindKey("original_payment_tokens"))) return fail;
     this->original_payment_tokens = unmunge(v);
 
-    if (!(v = dict->FindKey("blinded_payment_tokens"))) return fail;
-    this->blinded_payment_tokens = unmunge(v);
-
     if (!(v = dict->FindKey("signed_blinded_payment_tokens"))) return fail;
     this->signed_blinded_payment_tokens = unmunge(v);
 
     if (!(v = dict->FindKey("unblinded_signed_payment_tokens"))) return fail;
     this->unblinded_signed_payment_tokens = unmunge(v);
-
-    if (!(v = dict->FindKey("confirmation_id"))) return fail;
-    this->confirmation_id = v->GetString();
-
-    if (!(v = dict->FindKey("estimated_payment_worth"))) return fail;
-    this->estimated_payment_worth = v->GetString();
 
     return succeed;
   }
@@ -840,7 +831,6 @@ namespace bat_native_confirmations {
 
   void Confirmations::popFrontPayment() {
     auto &a = this->original_payment_tokens;
-    auto &b = this->blinded_payment_tokens;
     auto &c = this->signed_blinded_payment_tokens;
 
     a.erase(a.begin());
