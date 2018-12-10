@@ -67,7 +67,6 @@ namespace bat_native_confirmations {
   }
 
   void Confirmations::step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(std::string confirmations_GH_pair, std::string payments_GH_pair, std::vector<std::string> bat_names, std::vector<std::string> bat_keys) {
-    this->mutex.lock();
     // This (G,H) *pair* is exposed as a *single* string via the rust lib
     // G is the generator the server used in H, see next line
     // H, aka Y, is xG, the server's public key
@@ -82,15 +81,12 @@ namespace bat_native_confirmations {
     // for(auto x : bat_names) { std::cerr << "x: " << (x) << "\n"; }
   
     this->saveState();
-    std::cout << "step1.1 key: " << this->server_confirmation_key << std::endl;
-    this->mutex.unlock();
+    std::cout << "step1.1 : key: " << this->server_confirmation_key << std::endl;
   }
 
   void Confirmations::step_2_refillConfirmationsIfNecessary(std::string real_wallet_address,
                                                             std::string real_wallet_address_secret_key,
                                                             std::string local_server_confirmation_key) {
-
-    this->mutex.lock();
 
     if (this->blinded_confirmation_tokens.size() > low_token_threshold) {
       return;
@@ -116,7 +112,7 @@ namespace bat_native_confirmations {
       local_blinded_confirmation_tokens.push_back(blinded_token_base64);
     }
   
-    std::cout << "step2.1: batch generate, count: " << local_original_confirmation_tokens.size() << std::endl;
+    std::cout << "step2.1 : batch generate, count: " << local_original_confirmation_tokens.size() << std::endl;
 
     {
       std::string digest = "digest";
@@ -158,7 +154,7 @@ namespace bat_native_confirmations {
 
       // step 2.2 POST /v1/confirmation/token/{payment_id}
 
-      std::cout << "step2.2: POST /v1/confirmation/token/{payment_id}: " << real_wallet_address << std::endl;
+      std::cout << "step2.2 : POST /v1/confirmation/token/{payment_id}: " << real_wallet_address << std::endl;
       std::string endpoint = std::string("/v1/confirmation/token/").append(real_wallet_address);
  
       const char * h[] = {"digest", (const char *) real_digest_field.c_str(), 
@@ -202,7 +198,7 @@ namespace bat_native_confirmations {
       // TODO this is done blocking and assumes success but we need to separate it more and account for the possibility of failures
       // TODO GET: on inet failure, retry or cleanup & unlock
       { 
-        std::cout << "step2.3: GET  /v1/confirmation/token/{payment_id}?nonce=: " << nonce << std::endl;
+        std::cout << "step2.3 : GET  /v1/confirmation/token/{payment_id}?nonce=: " << nonce << std::endl;
         happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
         conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
  
@@ -265,7 +261,7 @@ namespace bat_native_confirmations {
 
         {
           //finally, if everything succeeded we'll modify object state and persist
-          std::cout << "step2.4: store the signed blinded confirmations tokens & pre data" << std::endl;
+          std::cout << "step2.4 : store the signed blinded confirmations tokens & pre data" << std::endl;
           vector_concat(this->original_confirmation_tokens, local_original_confirmation_tokens);
           vector_concat(this->blinded_confirmation_tokens, local_blinded_confirmation_tokens);
           vector_concat(this->signed_blinded_confirmation_tokens, server_signed_blinded_confirmations);
@@ -275,8 +271,6 @@ namespace bat_native_confirmations {
       } // 2.3
 
      } // 2.1
- 
-    this->mutex.unlock();
   }
 
   void Confirmations::step_3_1a_unblindSignedBlindedConfirmations() {
@@ -301,7 +295,7 @@ namespace bat_native_confirmations {
     // persist?
     this->saveState();
 
-    std::cout << "step3.1a unblinding signed blinded confirmations" << std::endl;
+    std::cout << "step3.1a: unblinding signed blinded confirmations" << std::endl;
   }
 
   void Confirmations::step_3_1b_generatePaymentTokenAndBlindIt() {
@@ -330,7 +324,7 @@ namespace bat_native_confirmations {
     this->confirmation_id = confirmationId;
 
     this->saveState();
-    std::cout << "step3.2: store confirmationId" << std::endl;
+    std::cout << "step3.2 : store confirmationId" << std::endl;
   }
 
   void Confirmations::step_4_2_storeSignedBlindedPaymentToken(std::string signedBlindedPaymentToken) {
@@ -338,7 +332,7 @@ namespace bat_native_confirmations {
     this->signed_blinded_payment_tokens.push_back(signedBlindedPaymentToken);
 
     this->saveState();
-    std::cout << "step4.2 store signed blinded payment" << std::endl;
+    std::cout << "step4.2 : store signed blinded payment" << std::endl;
   }
 
   void Confirmations::step_5_1_unblindSignedBlindedPayments() {
@@ -373,13 +367,13 @@ namespace bat_native_confirmations {
     // persist?
     this->saveState();
 
-    std::cout << "step5.1 unblind signed blinded payments" << std::endl;
+    std::cout << "step5.1 : unblind signed blinded payments" << std::endl;
   }
 
   void Confirmations::step_5_2_storeTransactionIdsAndActualPayment() {
 
     this->saveState();
-    std::cout << "step5.2 store txn ids and actual payment" << std::endl;
+    std::cout << "step5.2 : store txn ids and actual payment" << std::endl;
   }
 
   bool Confirmations::verifyBatchDLEQProof(std::string proof_string,

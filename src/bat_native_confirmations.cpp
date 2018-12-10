@@ -166,15 +166,19 @@ int main() {
   // TODO: hook up into brave-core client / bat-native-ads: this will get called by bat-native-ads when it downloads the ad catalog w/ keys (once only for now?)
   // NOTE: this call can block! it waits on a mutex to unlock. generally all these `step_#_#` calls will
   {
+    conf_client.mutex.lock();
     conf_client.step_1_1_storeTheServersConfirmationsPublicKeyAndGenerator(real_confirmations_public_key, real_payments_public_key, real_bat_names, real_bat_keys);
+    conf_client.mutex.unlock();
   }
 
   // TODO: hook up into brave-core client / bat-native-ads: this should happen on launch (in the background) and on loop/timer (in the background)
   // TODO: hook up into brave-core client / bat-native-ads: we'll need to not show ads whenever we're out of tokens use: conf_client.confirmations_ready_for_ad_showing(); to test
   {
+    conf_client.mutex.lock();
     conf_client.step_2_refillConfirmationsIfNecessary(real_wallet_address,
                                                       real_wallet_address_secret_key,
                                                       conf_client.server_confirmation_key);
+    conf_client.mutex.unlock();
   }
 
   { // step 2 mock
