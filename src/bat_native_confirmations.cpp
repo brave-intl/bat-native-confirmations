@@ -171,7 +171,6 @@ int main() {
 
   // TODO: hook up into brave-core client / bat-native-ads: this should happen on launch (in the background) and on loop/timer (in the background)
   // TODO: hook up into brave-core client / bat-native-ads: we'll need to not show ads whenever we're out of tokens use: conf_client.confirmations_ready_for_ad_showing(); to test
-
   {
     conf_client.step_2_refillConfirmationsIfNecessary(real_wallet_address,
                                                       real_wallet_address_secret_key,

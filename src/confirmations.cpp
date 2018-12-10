@@ -183,13 +183,13 @@ namespace bat_native_confirmations {
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
         std::cerr << "2.2 post resp: no dict" << "\n";
-        abort();
+        return;
       }
  
       base::Value *v;
       if (!(v = dict->FindKey("nonce"))) {
         std::cerr << "2.2 no nonce\n";
-        abort();
+        return;
       }
  
       std::string nonce = v->GetString();
@@ -222,21 +222,21 @@ namespace bat_native_confirmations {
         base::DictionaryValue* dict;
         if (!value->GetAsDictionary(&dict)) {
           std::cerr << "2.3 get resp: no dict" << "\n";
-          abort();
+          return;
         }
 
         base::Value *v;
 
         if (!(v = dict->FindKey("batchProof"))) {
           std::cerr << "2.3 no batchProof\n";
-          abort();
+          return;
         }
 
         std::string real_batch_proof = v->GetString();
 
         if (!(v = dict->FindKey("signedTokens"))) {
           std::cerr << "2.3 no signedTokens\n";
-          abort();
+          return;
         }
 
         base::ListValue list(v->GetList());
@@ -254,7 +254,7 @@ namespace bat_native_confirmations {
 
         bool real_verified = this->verifyBatchDLEQProof(real_batch_proof,
                                                         local_blinded_confirmation_tokens,
-                                                        server_signed_blinded_confirmations,//this->signed_blinded_confirmation_tokens,
+                                                        server_signed_blinded_confirmations,
                                                         local_server_confirmation_key);
         if (!real_verified) {
           // 2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 

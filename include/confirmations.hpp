@@ -30,7 +30,7 @@ class Confirmations {
     ////////////////////////////////////////
     // persist these properties
     std::string issuers_version = "0"; // if unset or "0", assume we haven't gotten one
-    std::string server_confirmation_key;
+    std::string server_confirmation_key; // 2018.12.10 If this changes what we can do is burn .*confirmation_tokens.* & repop
     std::string server_payment_key; // per amir,evq, this key isn't even supposed to exist. we overload it I think
     std::vector<std::string> server_bat_payment_names;
     std::vector<std::string> server_bat_payment_keys;
