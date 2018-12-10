@@ -25,7 +25,7 @@ executable("bnc-test") {
 
   sources = [
      "src/bat_native_confirmations.cpp",
-     "deps/happyhttp/happyhttp.cpp",
+#     "deps/happyhttp/happyhttp.cpp",
   ]
 
   include_dirs = [
@@ -75,12 +75,18 @@ source_set("confirmations") {
     "deps/challenge-bypass-ristretto-ffi/target/debug/libchallenge_bypass_ristretto.a",
   ]
 
+  include_dirs = [
+    "deps/happyhttp", # TODO REMOVE
+  ]
+
+
   sources = [
     "deps/challenge-bypass-ristretto-ffi/src/wrapper.hpp",
     "deps/challenge-bypass-ristretto-ffi/src/wrapper.cpp",
     "deps/challenge-bypass-ristretto-ffi/src/lib.h",
     "include/confirmations.hpp",
     "src/confirmations.cpp",
+    "deps/happyhttp/happyhttp.cpp", # TODO REMOVE
   ]
 
   deps = [

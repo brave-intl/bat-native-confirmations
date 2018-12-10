@@ -5,11 +5,23 @@
 
 #define CONFIRMATIONS_SIGNATURE_ALGORITHM "ed25519"
 
-namespace bat_native_confirmations {
-  using namespace challenge_bypass_ristretto;
+#include "happyhttp.h" // TODO brave-core-client: remove all traces
 
-  class Confirmations {
-   public:
+static const char* BRAVE_AD_SERVER = "ads-serve.bravesoftware.com";
+static int BRAVE_AD_SERVER_PORT = 80;
+extern int count;
+extern std::string happy_data; 
+extern int happy_status;
+void OnBegin( const happyhttp::Response* r, void* userdata );
+void OnData( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n );
+void OnComplete( const happyhttp::Response* r, void* userdata );
+
+namespace bat_native_confirmations {
+
+using namespace challenge_bypass_ristretto;
+
+class Confirmations {
+  public:
     std::mutex mutex;
 
     const size_t low_token_threshold = 2; // 20 
@@ -35,8 +47,6 @@ namespace bat_native_confirmations {
     
     std::string confirmation_id;
     std::string estimated_payment_worth;
-
-    std::string nonce;
     ////////////////////////////////////////
 
     void test();
@@ -45,8 +55,9 @@ namespace bat_native_confirmations {
                                                                     std::string payments_GH_pair,
                                                                     std::vector<std::string> bat_names,
                                                                     std::vector<std::string> bat_keys);
-    void step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem();
-    void step_2_4_storeTheSignedBlindedConfirmations(std::vector<std::string> server_signed_blinded_confirmations);
+    void step_2_refillConfirmationsIfNecessary(std::string real_wallet_address,
+                                               std::string real_wallet_address_secret_key,
+                                               std::string server_confirmation_key);
     void step_3_1a_unblindSignedBlindedConfirmations();
     void step_3_1b_generatePaymentTokenAndBlindIt();
     void step_3_2_storeConfirmationId(std::string confirmationId);
@@ -78,13 +89,13 @@ namespace bat_native_confirmations {
 
     Confirmations();
     ~Confirmations();
-   protected:
-   private:
-  };
+  protected:
+  private:
+};
 
 
-  class MockServer {
-   public:
+class MockServer {
+  public:
     SigningKey signing_key = SigningKey::random();
     PublicKey public_key = signing_key.public_key();
 
@@ -96,5 +107,5 @@ namespace bat_native_confirmations {
     void test();
     MockServer();
     ~MockServer();
-  };
+    };
 }

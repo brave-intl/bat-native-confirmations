@@ -13,6 +13,30 @@
 #include <openssl/hkdf.h>
 #include <openssl/sha.h>
 
+
+void OnBegin( const happyhttp::Response* r, void* userdata )
+{
+  // printf("BEGIN (%d %s)\n", r->getstatus(), r->getreason() );
+  count = 0;
+  happy_data = "";
+  happy_status = r->getstatus();
+}
+
+void OnData( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n )
+{
+  //fwrite( data,1,n, stdout );
+  happy_data.append((char *)data, (size_t)n);
+  count += n;
+}
+
+void OnComplete( const happyhttp::Response* r, void* userdata )
+{
+  happy_status = r->getstatus();
+  // printf("END (%d %s)\n", r->getstatus(), r->getreason() );
+  // printf("COMPLETE (%d bytes)\n", count );
+}
+
+
 namespace bat_native_confirmations {
 
   Confirmations::Confirmations() {
@@ -27,6 +51,9 @@ namespace bat_native_confirmations {
     // std::cout << "Confirmations::test works\n";
   }
 
+  void vector_concat(std::vector<std::string> &dest, std::vector<std::string> &source) {
+    dest.insert(dest.end(), source.begin(), source.end());
+  }
 
   bool Confirmations::confirmations_ready_for_ad_showing() {
 
@@ -51,21 +78,30 @@ namespace bat_native_confirmations {
     this->server_payment_key = payments_GH_pair;
     this->server_bat_payment_names = bat_names;
     this->server_bat_payment_keys = bat_keys;
-
+  
     // for(auto x : bat_names) { std::cerr << "x: " << (x) << "\n"; }
-
+  
     this->saveState();
     std::cout << "step1.1 key: " << this->server_confirmation_key << std::endl;
     this->mutex.unlock();
   }
 
-  void Confirmations::step_2_1_maybeBatchGenerateConfirmationTokensAndBlindThem() {
+  void Confirmations::step_2_refillConfirmationsIfNecessary(std::string real_wallet_address,
+                                                            std::string real_wallet_address_secret_key,
+                                                            std::string local_server_confirmation_key) {
 
-    if (blinded_confirmation_tokens.size() > low_token_threshold) {
+    this->mutex.lock();
+
+    if (this->blinded_confirmation_tokens.size() > low_token_threshold) {
       return;
     }
 
-    while (blinded_confirmation_tokens.size() < refill_amount) {
+    std::vector<std::string> local_original_confirmation_tokens = {};
+    std::vector<std::string> local_blinded_confirmation_tokens = {};
+
+    size_t needed = refill_amount - blinded_confirmation_tokens.size();
+
+    for (size_t i = 0; i < needed; i++) {
       // client prepares a random token and blinding scalar pair
       Token token = Token::random();
       std::string token_base64 = token.encode_base64();
@@ -76,18 +112,171 @@ namespace bat_native_confirmations {
 
       // client stores the original token and the blinded token
       // will send blinded token to server
-      this->original_confirmation_tokens.push_back(token_base64);
-      this->blinded_confirmation_tokens.push_back(blinded_token_base64);
+      local_original_confirmation_tokens.push_back(token_base64);
+      local_blinded_confirmation_tokens.push_back(blinded_token_base64);
     }
   
-    this->saveState();
-    std::cout << "step2.1: batch generate, count: " << original_confirmation_tokens.size() << std::endl;
-  }
+    std::cout << "step2.1: batch generate, count: " << local_original_confirmation_tokens.size() << std::endl;
 
-  void Confirmations::step_2_4_storeTheSignedBlindedConfirmations(std::vector<std::string> server_signed_blinded_confirmations) {
-    this->signed_blinded_confirmation_tokens = server_signed_blinded_confirmations;
-    this->saveState();
-    std::cout << "step2.4: store signed_blinded_confirmations_tokens from server" << std::endl;
+    {
+      std::string digest = "digest";
+      std::string primary = "primary";
+      
+      /////////////////////////////////////////////////////////////////////////////
+      std::string build = "";
+      
+      build.append("{\"blindedTokens\":");
+      build.append("[");
+      std::vector<std::string> a = local_blinded_confirmation_tokens;
+      
+      for(size_t i = 0; i < a.size(); i++) {
+      if(i > 0) {
+        build.append(",");
+      }
+      build.append("\"");
+      build.append(a[i]);
+      build.append("\"");
+      }
+      
+      build.append("]");
+      build.append("}");
+      
+      std::string real_body = build;
+      
+      std::vector<uint8_t> real_sha_raw = this->getSHA256(real_body);
+      std::string real_body_sha_256_b64 = this->getBase64(real_sha_raw);
+      
+      std::vector<uint8_t> real_skey = this->rawDataBytesVectorFromASCIIHexString(real_wallet_address_secret_key);
+      
+      std::string real_digest_field = std::string("SHA-256=").append(real_body_sha_256_b64);
+
+      std::string real_signature_field = this->sign(&digest, &real_digest_field, 1, primary, real_skey);
+      /////////////////////////////////////////////////////////////////////////////
+
+      happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+      conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+
+      // step 2.2 POST /v1/confirmation/token/{payment_id}
+
+      std::cout << "step2.2: POST /v1/confirmation/token/{payment_id}: " << real_wallet_address << std::endl;
+      std::string endpoint = std::string("/v1/confirmation/token/").append(real_wallet_address);
+ 
+      const char * h[] = {"digest", (const char *) real_digest_field.c_str(), 
+                          "signature", (const char *) real_signature_field.c_str(), 
+                          "accept", "application/json",
+                          "Content-Type", "application/json",
+                          NULL, NULL };
+ 
+      conn.request("POST", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
+ 
+      while( conn.outstanding() ) conn.pump();
+ 
+      std::string post_resp = happy_data;
+ 
+      //TODO this should be the `nonce` in the return. we need to make sure we get the nonce in the separate request  
+      //observation. seems like we should move all of this (the tokens in-progress) data to a map keyed on the nonce, and then
+      //step the storage through (pump) in a state-wise (dfa) as well, so the storage types are coded (named) on a dfa-state-respecting basis
+ 
+      // TODO 2.2 POST: on inet failure, retry or cleanup & unlock
+      
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(post_resp));
+      base::DictionaryValue* dict;
+      if (!value->GetAsDictionary(&dict)) {
+        std::cerr << "2.2 post resp: no dict" << "\n";
+        abort();
+      }
+ 
+      base::Value *v;
+      if (!(v = dict->FindKey("nonce"))) {
+        std::cerr << "2.2 no nonce\n";
+        abort();
+      }
+ 
+      std::string nonce = v->GetString();
+ 
+      // TODO Instead of pursuing true asynchronicity at this point, what we can do is sleep for a minute or two
+      //      and blow away any work to this point on failure
+      //      this solves the problem for now since the tokens have no value at this point
+ 
+      //STEP 2.3
+      // TODO this is done blocking and assumes success but we need to separate it more and account for the possibility of failures
+      // TODO GET: on inet failure, retry or cleanup & unlock
+      { 
+        std::cout << "step2.3: GET  /v1/confirmation/token/{payment_id}?nonce=: " << nonce << std::endl;
+        happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+        conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
+ 
+        // /v1/confirmation/token/{payment_id}
+        std::string endpoint = std::string("/v1/confirmation/token/").append(real_wallet_address).append("?nonce=").append(nonce);
+
+        conn.request("GET", endpoint.c_str()  ); // h, (const unsigned char *)real_body.c_str(), real_body.size());
+
+        while( conn.outstanding() ) conn.pump();
+        std::string get_resp = happy_data;
+
+        /////////////////////////////////////////////////////////
+
+        // happy_data: {"batchProof":"r2qx2h5ENHASgBxEhN2TjUjtC2L2McDN6g/lZ+nTaQ6q+6TZH0InhxRHIp0vdUlSbMMCHaPdLYsj/IJbseAtCw==","signedTokens":["VI27MCax4V9Gk60uC1dwCHHExHN2WbPwwlJk87fYAyo=","mhFmcWHLk5X8v+a/X0aea24OfGWsfAwWbP7RAeXXLV4="]}
+
+        std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
+        base::DictionaryValue* dict;
+        if (!value->GetAsDictionary(&dict)) {
+          std::cerr << "2.3 get resp: no dict" << "\n";
+          abort();
+        }
+
+        base::Value *v;
+
+        if (!(v = dict->FindKey("batchProof"))) {
+          std::cerr << "2.3 no batchProof\n";
+          abort();
+        }
+
+        std::string real_batch_proof = v->GetString();
+
+        if (!(v = dict->FindKey("signedTokens"))) {
+          std::cerr << "2.3 no signedTokens\n";
+          abort();
+        }
+
+        base::ListValue list(v->GetList());
+
+        std::vector<std::string> server_signed_blinded_confirmations = {};
+
+        for (size_t i = 0; i < list.GetSize(); i++) {
+          base::Value *x;
+          list.Get(i, &x);
+
+          auto sbc = x->GetString();
+
+          server_signed_blinded_confirmations.push_back(sbc);
+        }
+
+        bool real_verified = this->verifyBatchDLEQProof(real_batch_proof,
+                                                        local_blinded_confirmation_tokens,
+                                                        server_signed_blinded_confirmations,//this->signed_blinded_confirmation_tokens,
+                                                        local_server_confirmation_key);
+        if (!real_verified) {
+          // 2018.11.29 kevin - ok to log these only (maybe forever) but don't consider failing until after we're versioned on "issuers" private keys 
+          // 2018.12.10 actually, ok to fail on the confirmations portion of this now. we don't want bad tokens anyway
+          std::cerr << "ERROR: Server confirmations proof invalid" << std::endl;
+          return;
+        }
+
+        {
+          //finally, if everything succeeded we'll modify object state and persist
+          std::cout << "step2.4: store the signed blinded confirmations tokens & pre data" << std::endl;
+          vector_concat(this->original_confirmation_tokens, local_original_confirmation_tokens);
+          vector_concat(this->blinded_confirmation_tokens, local_blinded_confirmation_tokens);
+          vector_concat(this->signed_blinded_confirmation_tokens, server_signed_blinded_confirmations);
+          this->saveState();
+        }
+
+      } // 2.3
+
+     } // 2.1
+ 
+    this->mutex.unlock();
   }
 
   void Confirmations::step_3_1a_unblindSignedBlindedConfirmations() {
@@ -265,7 +454,6 @@ namespace bat_native_confirmations {
     dict.SetWithoutPathExpansion("unblinded_signed_payment_tokens", munge(unblinded_signed_payment_tokens));
     dict.SetKey("confirmation_id", base::Value(confirmation_id));
     dict.SetKey("estimated_payment_worth", base::Value(estimated_payment_worth));
-    dict.SetKey("nonce", base::Value(nonce));
 
     std::string json;
     base::JSONWriter::Write(dict, &json);
@@ -342,9 +530,6 @@ namespace bat_native_confirmations {
     if (!(v = dict->FindKey("estimated_payment_worth"))) return fail;
     this->estimated_payment_worth = v->GetString();
 
-    if (!(v = dict->FindKey("nonce"))) return fail;
-    this->nonce = v->GetString();
-
     return succeed;
   }
 
@@ -358,7 +543,7 @@ namespace bat_native_confirmations {
     assert(json2 == json);
 
     // std::cout << json<< "\n\n\n\n";
-    std::cout << "saving state... | ";
+    // std::cout << "saving state... | ";
   }
 
   bool Confirmations::loadState(std::string json_state) {

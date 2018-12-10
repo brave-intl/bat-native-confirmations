@@ -1,4 +1,5 @@
 // altered version
+#pragma once
 /*
  * HappyHTTP - a simple HTTP library
  * Version 0.1
