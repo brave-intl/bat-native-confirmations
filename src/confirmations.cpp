@@ -627,6 +627,7 @@ namespace bat_native_confirmations {
       }
     }
     this->payment_token_json_bundles = remain;
+    this->saveState();
   }
 
   void Confirmations::step_5_cashInPaymentIOUs(std::string real_wallet_address) {
@@ -769,6 +770,7 @@ namespace bat_native_confirmations {
       // TODO prune? (grows in # of ads watched & paid)
       vector_concat(this->fully_submitted_payment_bundles, this->signed_blinded_payment_token_json_bundles);
       this->signed_blinded_payment_token_json_bundles.clear();
+      this->saveState();
       
       return;
 
