@@ -63,9 +63,9 @@ namespace bat_native_confirmations {
 
     // TODO Whatever thread/service calls this in brave-core-client must also 
     //      be the one that triggers ad showing, or we'll have a race condition
-    mutex.lock();
+    // mutex.lock();
     bool ready = (signed_blinded_confirmation_tokens.size() > 0);
-    mutex.unlock();
+    // mutex.unlock();
 
     return ready;
   }
@@ -323,14 +323,16 @@ namespace bat_native_confirmations {
     // // what's `t`? local_unblinded_signed_confirmation_token
     // // what's `MAC_{sk}(R)`? item from blinded_payment_tokens
 
-    std::string prePaymentToken = local_blinded_payment_token; 
+    // std::string prePaymentToken = local_blinded_payment_token; 
+    std::string blindedPaymentToken = local_blinded_payment_token; 
     std::string json;
     
     // build body of POST request
     base::DictionaryValue dict;
     dict.SetKey("creativeInstanceId", base::Value(real_creative_instance_id));
     dict.SetKey("payload", base::Value(base::Value::Type::DICTIONARY));
-    dict.SetKey("prePaymentToken", base::Value(prePaymentToken));
+    //dict.SetKey("prePaymentToken", base::Value(prePaymentToken));
+    dict.SetKey("blindedPaymentToken", base::Value(blindedPaymentToken));
     dict.SetKey("type", base::Value("landed"));
     base::JSONWriter::Write(dict, &json);
 
@@ -405,6 +407,7 @@ namespace bat_native_confirmations {
       //  ✓ confirmation_id
       //  ✓ local_original_payment_token
       //  ✓ local_blinded_payment_token - we do need: for DLEQ proof
+      //  ✗ bundle_timestamp - nice to have in case we want to expire later
 
       std::string timestamp = std::to_string(base::Time::NowFromSystemTime().ToTimeT());
 
@@ -422,7 +425,10 @@ namespace bat_native_confirmations {
     }
   }
 
-  void Confirmations::processIOUBundle(std::string bundle_json) {
+  bool Confirmations::processIOUBundle(std::string bundle_json) {
+
+    bool unfinished = false;
+    bool finished   = true;
 
     std::string confirmation_id;
     std::string original_payment_token;
@@ -432,26 +438,26 @@ namespace bat_native_confirmations {
     base::DictionaryValue* map;
     if (!bundle_value->GetAsDictionary(&map)) {
       std::cerr << "no 4 process iou bundle dict" << "\n";
-      return;
+      return finished;
     }
 
     base::Value *u;
 
     if (!(u = map->FindKey("confirmation_id"))) {
       std::cerr << "4 process iou bundle, could not get confirmation_id\n";
-      return;
+      return finished;
     }
     confirmation_id = u->GetString();
 
     if (!(u = map->FindKey("original_payment_token"))) {
       std::cerr << "4 process iou bundle, could not get original_payment_token\n";
-      return;
+      return finished;
     }
     original_payment_token = u->GetString();
  
     if (!(u = map->FindKey("blinded_payment_token"))) {
       std::cerr << "4 process iou bundle, could not get blinded_payment_token\n";
-      return;
+      return finished;
     }
     blinded_payment_token = u->GetString();
   
@@ -473,7 +479,7 @@ namespace bat_native_confirmations {
     if (!(get_resp_code == 200 || get_resp_code == 202))  { 
       // something broke before server could decide paid:true/false
       // TODO inet failure: retry or cleanup & unlock
-      return;
+      return unfinished;
     }
 
     // 2018.12.10 apparently, server side has changed to always pay tokens, so we won't recv 202 response?
@@ -485,37 +491,35 @@ namespace bat_native_confirmations {
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
         std::cerr << "4.1 202 no dict" << "\n";
-        return;
+        return unfinished;
       }
 
       base::Value *v;
       if (!(v = dict->FindKey("estimateToken"))) {
         std::cerr << "4.1 202 no estimateToken\n";
-        return;
+        return unfinished;
       }
 
       base::DictionaryValue* et;
       if (!v->GetAsDictionary(&et)) {
         std::cerr << "4.1 202 no eT dict" << "\n";
-        return;
+        return unfinished;
       }
 
       if (!(v = et->FindKey("publicKey"))) {
         std::cerr << "4.1 202 no publicKey\n";
-        return;
+        return unfinished;
       }
 
       std::string token = v->GetString();
       std::string name = this->BATNameFromBATPublicKey(token);
       if (name != "") {
-        // TODO
         std::string estimated_payment_worth = name;
-        std::cerr << "estimated_payment_worth: " << (estimated_payment_worth) << "\n";
       } else {
         std::cerr << "Step 4.1 202 verification empty name \n";
       }
 
-      return;
+      return unfinished;
     }
  
     if (get_resp_code == 200) { // paid:true response
@@ -524,41 +528,41 @@ namespace bat_native_confirmations {
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
         std::cerr << "4.1 200 no dict" << "\n";
-        return;
+        return unfinished;
       }
 
       if (!(v = dict->FindKey("id"))) {
         std::cerr << "4.1 200 no id\n";
-        return;
+        return unfinished;
       }
       std::string id = v->GetString();
 
       if (!(v = dict->FindKey("paymentToken"))) {
         std::cerr << "4.1 200 no paymentToken\n";
-        return;
+        return unfinished;
       }
 
       base::DictionaryValue* pt;
       if (!v->GetAsDictionary(&pt)) {
         std::cerr << "4.1 200 no pT dict" << "\n";
-        return;
+        return unfinished;
       }
 
       if (!(v = pt->FindKey("publicKey"))) {
         std::cerr << "4.1 200 no publicKey\n";
-        return;
+        return unfinished;
       }
       std::string publicKey = v->GetString();
 
       if (!(v = pt->FindKey("batchProof"))) {
         std::cerr << "4.1 200 no batchProof\n";
-        return;
+        return unfinished;
       }
       std::string batchProof = v->GetString();
 
       if (!(v = pt->FindKey("signedTokens"))) {
         std::cerr << "4.1 200 could not get signedTokens\n";
-        return;
+        return unfinished;
       }
 
       base::ListValue signedTokensList(v->GetList());
@@ -566,7 +570,7 @@ namespace bat_native_confirmations {
 
       if (signedTokensList.GetSize() != 1) {
         std::cerr << "4.1 200 currently unsupported size for signedTokens array\n";
-        return;
+        return unfinished;
       }
 
       for (size_t i = 0; i < signedTokensList.GetSize(); i++) {
@@ -586,52 +590,91 @@ namespace bat_native_confirmations {
         std::cerr << "ERROR: Real payment proof invalid" << std::endl;
       }
 
-      for (auto signedBlindedPaymentToken : signedBlindedTokens) {
-        std::cout << "step4.2 : store signed blinded payment token" << std::endl;
-        this->signed_blinded_payment_tokens.push_back(signedBlindedPaymentToken);
-        this->saveState();
-      }
-
       std::string name = this->BATNameFromBATPublicKey(publicKey);
+      std::string payment_worth = "";
       if (name != "") {
-        // TODO we're calling this `estimated`, but it should be `actual` ?
-        std::string estimated_payment_worth = name;
-        std::cerr << "estimated_payment_worth: " << (estimated_payment_worth) << "\n";
-        this->server_payment_key = publicKey;
+        payment_worth = name;
       } else {
         std::cerr << "Step 4.1/4.2 200 verification empty name \n";
       }
+
+      for (auto signedBlindedPaymentToken : signedBlindedTokens) {
+        std::cout << "step4.2 : store signed blinded payment token" << std::endl;
+        map->SetKey("signed_blinded_payment_token", base::Value(signedBlindedPaymentToken));
+        map->SetKey("server_payment_key", base::Value(publicKey));
+        map->SetKey("payment_worth", base::Value(payment_worth));
+
+        std::string json_with_signed;
+        base::JSONWriter::Write(*map, &json_with_signed);
+
+        this->signed_blinded_payment_token_json_bundles.push_back(json_with_signed);
+        this->saveState();
+      }
+
+      return finished;
     } 
-    
+   
+    return unfinished;
   }
 
   void Confirmations::step_4_retrievePaymentIOUs() {
     // we cycle through this multiple times until the token is marked paid
+    std::vector<std::string> remain = {};
     for (auto payment_bundle_json : this->payment_token_json_bundles) {
-      // TODO remove bundles from the array on (bundle's) success
-      processIOUBundle(payment_bundle_json);
+      bool finished = processIOUBundle(payment_bundle_json);
+      if (!finished) {
+          remain.push_back(payment_bundle_json);
+      }
     }
+    this->payment_token_json_bundles = remain;
   }
 
-  void Confirmations::step_5_cashInPayments(std::string real_wallet_address) {
+  void Confirmations::step_5_cashInPaymentIOUs(std::string real_wallet_address) {
 
     std::cout << "step5.1 : unblind signed blinded payments" << std::endl;
 
-    int n = this->signed_blinded_payment_tokens.size();
+    size_t n = this->signed_blinded_payment_token_json_bundles.size();
 
     if (n <= 0) {
-      std::cerr << "ERROR: step_5_1, no signed blinded payment tokens" << std::endl;
       return;
     }
 
-    // TODO this can't be good. figure out how to remove old tokens based on success
-    this->unblinded_signed_payment_tokens.clear();
+    std::vector<std::string> local_unblinded_signed_payment_tokens = {};
+    std::vector<std::string> local_payment_keys = {};
 
-    for (int i = 0; i < n; i++) {
-std::cerr << "i: " << (i) << "\n";
-std::cerr << "we're dying here because none of this obj state exists. use bundles?\n";
-      std::string orig_token_b64 = this->original_payment_tokens[i];
-      std::string sb_token_b64 = this->signed_blinded_payment_tokens[i];
+    for (size_t i = 0; i < n; i++) {
+
+      std::string json = this->signed_blinded_payment_token_json_bundles[i];
+
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(json));
+      base::DictionaryValue* map;
+      if (!value->GetAsDictionary(&map)) {
+        std::cerr << "5 cannot rehydrate: no map" << "\n";
+        return;
+      }
+
+      base::Value *u;
+
+      if (!(u = map->FindKey("server_payment_key"))) {
+        std::cerr << "5 process iou bundle, could not get server_payment_key\n";
+        return;
+      }
+      std::string server_payment_key = u->GetString();
+      
+      if (!(u = map->FindKey("original_payment_token"))) {
+        std::cerr << "5 process iou bundle, could not get original_payment_token\n";
+        return;
+      }
+      std::string original_payment_token = u->GetString();
+ 
+      if (!(u = map->FindKey("signed_blinded_payment_token"))) {
+        std::cerr << "5 process iou bundle, could not get signed_blinded_payment_token\n";
+        return;
+      }
+      std::string signed_blinded_payment_token = u->GetString();
+ 
+      std::string orig_token_b64 = original_payment_token;
+      std::string sb_token_b64 = signed_blinded_payment_token;
 
       // rehydrate
       Token restored_token = Token::decode_base64(orig_token_b64);
@@ -641,18 +684,9 @@ std::cerr << "we're dying here because none of this obj state exists. use bundle
       // dehydrate  
       std::string base64_unblinded_token = client_unblinded_token.encode_base64();
       // put on object
-      this->unblinded_signed_payment_tokens.push_back(base64_unblinded_token);
-std::cerr << "i finished: " << (i) << "\n";
+      local_unblinded_signed_payment_tokens.push_back(base64_unblinded_token);
+      local_payment_keys.push_back(server_payment_key);
     }
-
-    // persist?
-    this->saveState();
-
-    // TODO how long are we keeping these txn ids around? what is format of "actual payment" ? 
-    // TODO server_payment_key everywhere below likely needs to be replaced or revised
-
-    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
-    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
 
     // PUT /v1/confirmation/token/{payment_id}
     std::string endpoint = std::string("/v1/confirmation/payment/").append(real_wallet_address);
@@ -660,7 +694,7 @@ std::cerr << "i finished: " << (i) << "\n";
     //{}->payload->{}->payment_id                               real_wallet_address
     //{}->paymentCredentials->[]->{}->credential->{}->signature signature of payload
     //{}->paymentCredentials->[]->{}->credential->{}->t         uspt
-    //{}->paymentCredentials->[]->{}->publicKey                 this->server_payment_key
+    //{}->paymentCredentials->[]->{}->publicKey                 server_payment_key
 
     std::string primary = "primary";
     std::string pay_key = "paymentId";
@@ -674,10 +708,11 @@ std::cerr << "i finished: " << (i) << "\n";
 
     base::ListValue * list = new base::ListValue();
 
-    // TODO  each of these uspt's actually has its own associated public key
     // TODO have brianjohnson/nejc/terry spot check this block to make sure new/::move/::unique_ptr usage is right
-    // TODO on success, clear out the list ... ? (sum up totals...?)
-    for (auto uspt: this->unblinded_signed_payment_tokens) {
+    for (size_t i = 0; i < local_unblinded_signed_payment_tokens.size(); i++) {
+
+      auto uspt = local_unblinded_signed_payment_tokens[i];
+      std::string server_payment_key = local_payment_keys[i];
 
       UnblindedToken restored_unblinded_token = UnblindedToken::decode_base64(uspt);
       VerificationKey client_vKey = restored_unblinded_token.derive_verification_key();
@@ -693,7 +728,7 @@ std::cerr << "i finished: " << (i) << "\n";
 
       base::DictionaryValue * dict = new base::DictionaryValue();
       dict->SetKey("credential", std::move(cred));
-      dict->SetKey("publicKey", base::Value(this->server_payment_key));
+      dict->SetKey("publicKey", base::Value(server_payment_key));
 
       list->Append(std::unique_ptr<base::DictionaryValue>(dict));
     }
@@ -712,16 +747,32 @@ std::cerr << "i finished: " << (i) << "\n";
 
     std::string real_body = json;
 
+    happyhttp::Connection conn(BRAVE_AD_SERVER, BRAVE_AD_SERVER_PORT);
+    conn.setcallbacks( OnBegin, OnData, OnComplete, 0 );
     conn.request("PUT", endpoint.c_str(), h, (const unsigned char *)real_body.c_str(), real_body.size());
 
     while( conn.outstanding() ) conn.pump();
     std::string put_resp = happy_data;
-std::cerr << "happy_data: " << (happy_data) << "\n";
     int put_resp_code = happy_status;
-std::cerr << "happy_status: " << (happy_status) << "\n";
+
+    if (put_resp_code != 200) {
+      // TODO on inet failure, retry or cleanup & unlock ?
+      return;
+    }
 
     if (put_resp_code == 200) {
-      // NB. this still has the potential to carry an error key
+
+      // 2018.12.11 a 200 response from the server now means that we're done
+      //            clean up state (remove succeeded bundles) and go home
+      std::cout << "step5.2 : store txn ids and actual payment" << std::endl;
+
+      // TODO prune? (grows in # of ads watched & paid)
+      vector_concat(this->fully_submitted_payment_bundles, this->signed_blinded_payment_token_json_bundles);
+      this->signed_blinded_payment_token_json_bundles.clear();
+      
+      return;
+
+      // NB. this still has the potential to carry an error key? 2018.12.10 is this still true anymore?
 
       std::unique_ptr<base::Value> value(base::JSONReader::Read(put_resp));
 
@@ -730,7 +781,6 @@ std::cerr << "happy_status: " << (happy_status) << "\n";
         std::cerr << "no list" << "\n";
         abort();
       }
-
 
       for (size_t i = 0; i < list->GetSize(); i++) {
         base::Value *x;
@@ -761,18 +811,7 @@ std::cerr << "happy_status: " << (happy_status) << "\n";
         }
 
       }
-
-
-    } else {
-      // TODO on inet failure, retry or cleanup & unlock
     }
-
-    // TODO
-    std::cout << "step5.2 : store txn ids and actual payment" << std::endl;
-    this->saveState();
-    
-    // TODO actually, on success we pop payments equal to # retrieved, not just first:
-    //this->popFrontPayment();
 
   }
 
@@ -842,9 +881,8 @@ std::cerr << "happy_status: " << (happy_status) << "\n";
     dict.SetWithoutPathExpansion("blinded_confirmation_tokens", munge(blinded_confirmation_tokens));
     dict.SetWithoutPathExpansion("signed_blinded_confirmation_tokens", munge(signed_blinded_confirmation_tokens));
     dict.SetWithoutPathExpansion("payment_token_json_bundles", munge(payment_token_json_bundles));
-    dict.SetWithoutPathExpansion("original_payment_tokens", munge(original_payment_tokens));
-    dict.SetWithoutPathExpansion("signed_blinded_payment_tokens", munge(signed_blinded_payment_tokens));
-    dict.SetWithoutPathExpansion("unblinded_signed_payment_tokens", munge(unblinded_signed_payment_tokens));
+    dict.SetWithoutPathExpansion("signed_blinded_payment_token_json_bundles", munge(signed_blinded_payment_token_json_bundles));
+    dict.SetWithoutPathExpansion("fully_submitted_payment_bundles", munge(fully_submitted_payment_bundles));
 
     std::string json;
     base::JSONWriter::Write(dict, &json);
@@ -900,14 +938,11 @@ std::cerr << "happy_status: " << (happy_status) << "\n";
     if (!(v = dict->FindKey("signed_blinded_confirmation_tokens"))) return fail;
     this->signed_blinded_confirmation_tokens = unmunge(v);
 
-    if (!(v = dict->FindKey("original_payment_tokens"))) return fail;
-    this->original_payment_tokens = unmunge(v);
+    if (!(v = dict->FindKey("signed_blinded_payment_token_json_bundles"))) return fail;
+    this->signed_blinded_payment_token_json_bundles = unmunge(v);
 
-    if (!(v = dict->FindKey("signed_blinded_payment_tokens"))) return fail;
-    this->signed_blinded_payment_tokens = unmunge(v);
-
-    if (!(v = dict->FindKey("unblinded_signed_payment_tokens"))) return fail;
-    this->unblinded_signed_payment_tokens = unmunge(v);
+    if (!(v = dict->FindKey("fully_submitted_payment_bundles"))) return fail;
+    this->fully_submitted_payment_bundles = unmunge(v);
 
     return succeed;
   }
@@ -954,11 +989,9 @@ std::cerr << "happy_status: " << (happy_status) << "\n";
   }
 
   void Confirmations::popFrontPayment() {
-    auto &a = this->original_payment_tokens;
-    auto &c = this->signed_blinded_payment_tokens;
+    auto &a = this->signed_blinded_payment_token_json_bundles;
 
     a.erase(a.begin());
-    c.erase(c.begin());
   }
 
   std::string Confirmations::BATNameFromBATPublicKey(std::string token) {

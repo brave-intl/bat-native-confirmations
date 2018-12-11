@@ -62,7 +62,7 @@ int main() {
   //    5.2 store transactionIds + payment
 
   bool test_with_server = true;
-  bool pay_invoices = true; // toggle to test paid/not paid state at step 4.1 200/202
+  bool pay_invoices = false; // toggle to test paid/not paid state at step 4.1 200/202. 2018.12.11 not needed anymore apparently?
 
   bat_native_confirmations::Confirmations conf_client;
   bat_native_confirmations::MockServer mock_server;
@@ -336,7 +336,7 @@ int main() {
   // step 5
   {
     conf_client.mutex.lock();
-    conf_client.step_5_cashInPayments(real_wallet_address);
+    conf_client.step_5_cashInPaymentIOUs(real_wallet_address);
     conf_client.mutex.unlock();
   }
 

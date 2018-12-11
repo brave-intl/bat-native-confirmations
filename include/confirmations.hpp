@@ -39,10 +39,9 @@ class Confirmations {
     std::vector<std::string>        blinded_confirmation_tokens;
     std::vector<std::string> signed_blinded_confirmation_tokens;
 
-    std::vector<std::string>         payment_token_json_bundles;
-    std::vector<std::string>            original_payment_tokens; // TODO marked for death (must fix step 5 first)
-    std::vector<std::string>      signed_blinded_payment_tokens;
-    std::vector<std::string>    unblinded_signed_payment_tokens; 
+    std::vector<std::string>                payment_token_json_bundles;
+    std::vector<std::string> signed_blinded_payment_token_json_bundles;
+    std::vector<std::string>           fully_submitted_payment_bundles;
     ////////////////////////////////////////
 
     void test();
@@ -56,7 +55,7 @@ class Confirmations {
                                                std::string server_confirmation_key);
     void step_3_redeemConfirmation(std::string real_creative_instance_id);
     void step_4_retrievePaymentIOUs();
-    void step_5_cashInPayments(std::string real_wallet_address);
+    void step_5_cashInPaymentIOUs(std::string real_wallet_address);
 
     bool verifyBatchDLEQProof(std::string proof_string, 
                               std::vector<std::string> blind_strings,
@@ -71,7 +70,7 @@ class Confirmations {
     bool fromJSONString(std::string json);
     std::vector<std::string> unmunge(base::Value *value);
     std::string BATNameFromBATPublicKey(std::string token);
-    void processIOUBundle(std::string bundle_json);
+    bool processIOUBundle(std::string bundle_json);
 
     //convert std::string of ascii-hex to raw data vector<uint8_t>
     std::vector<uint8_t> rawDataBytesVectorFromASCIIHexString(std::string ascii);
