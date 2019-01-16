@@ -8,11 +8,13 @@
 #include "logging.h"
 #include "static_values.h"
 #include "base/rand_util.h"
+#include "chrome/browser/browser_process.h"
 
 #include <vector>
 #include <iostream>
 #include <memory>
-#include <regex>
+#include <mutex>
+#include <condition_variable>
 
 #include "base/base64.h"
 #include "base/guid.h"
@@ -30,30 +32,76 @@
 
 using namespace std::placeholders;
 
-std::string happy_data;
-int happy_status;
-int count;
-
-void OnBegin(const happyhttp::Response* r, void* userdata) {
-  count = 0;
-  happy_data = "";
-  happy_status = r->getstatus();
-}
-
-void OnData(
-    const happyhttp::Response* r,
-    void* userdata,
-    const unsigned char* data,
-    int n) {
-  happy_data.append((char *)data, (size_t)n);
-  count += n;
-}
-
-void OnComplete(const happyhttp::Response* r, void* userdata) {
-  happy_status = r->getstatus();
-}
-
 namespace confirmations {
+
+ConfirmationsImpl::ConfirmationsImpl(
+    ConfirmationsClient* confirmations_client) :
+    is_initialized_(false),
+    step_2_refill_confirmations_timer_id_(0),
+    step_4_retrieve_payment_ious_timer_id_(0),
+    step_5_cash_in_payment_ious_timer_id_(0),
+    confirmations_client_(confirmations_client) {
+  LoadState();
+}
+
+ConfirmationsImpl::~ConfirmationsImpl() {
+  StopRefillingConfirmations();
+  StopRetrievingPaymentIOUS();
+  StopCashingInPaymentIOUS();
+}
+
+void ConfirmationsImpl::URLFetchSync(
+    const std::string& url,
+    const std::vector<std::string>& headers,
+    const std::string& content,
+    const std::string& content_type,
+    net::URLFetcher::RequestType request_type) {
+  net::URLFetcher* fetcher = net::URLFetcher::Create(
+      GURL(url), request_type, this).release();
+  fetcher->SetRequestContext(g_browser_process->system_request_context());
+
+  for (size_t i = 0; i < headers.size(); i++) {
+    fetcher->AddExtraRequestHeader(headers[i]);
+  }
+
+  if (!content.empty()) {
+    fetcher->SetUploadData(content_type, content);
+  }
+
+  fetcher->Start();
+
+  semaphore_.wait();
+}
+
+void ConfirmationsImpl::OnURLFetchComplete(
+    const net::URLFetcher* source) {
+  int response_code = source->GetResponseCode();
+  std::string body;
+  std::map<std::string, std::string> headers;
+  scoped_refptr<net::HttpResponseHeaders> headersList =
+      source->GetResponseHeaders();
+
+  if (headersList) {
+    size_t iter = 0;
+    std::string key;
+    std::string value;
+    while (headersList->EnumerateHeaderLines(&iter, &key, &value)) {
+      key = base::ToLowerASCII(key);
+      headers[key] = value;
+    }
+  }
+
+  if (response_code != net::URLFetcher::ResponseCode::RESPONSE_CODE_INVALID &&
+      source->GetStatus().is_success()) {
+    source->GetResponseAsString(&body);
+  }
+
+  delete source;
+
+  response_ = body;
+  response_code_ = response_code;
+  semaphore_.signal();
+}
 
 void ConfirmationsImpl::VectorConcat(
     std::vector<std::string>* dest,
@@ -227,34 +275,16 @@ void ConfirmationsImpl::Step2RefillConfirmationsIfNecessary(
         &digest, &real_digest_field, 1, primary, real_skey);
 
     ///////////////////////////////////////////////////////////////////////////
-
-    happyhttp::Connection conn(GetServerUrl().c_str(), GetServerPort());
-    conn.setcallbacks(OnBegin, OnData, OnComplete, 0);
-
-    // step 2.2 POST /v1/confirmation/token/{payment_id}
-
-    BLOG(INFO) << "step2.2 : POST /v1/confirmation/token/{payment_id}: "
-        << real_wallet_address;
     std::string endpoint = std::string("/v1/confirmation/token/").append(
         real_wallet_address);
-
-    const char * h[] = {
-        "digest", (const char*)real_digest_field.c_str(),
-        "signature", (const char*)real_signature_field.c_str(),
-        "accept", "application/json",
-        "Content-Type", "application/json",
-        NULL,
-        NULL
-    };
-
-    conn.request("POST", endpoint.c_str(), h,
-        (const unsigned char *)real_body.c_str(), real_body.size());
-
-    while (conn.outstanding()) {
-      conn.pump();
-    }
-
-    std::string post_resp = happy_data;
+    std::string url = GetServerUrl().append(endpoint);
+    std::vector<std::string> headers = {};
+    headers.push_back(std::string("digest: ").append(real_digest_field));
+    headers.push_back(std::string("signature: ").append(real_signature_field));
+    headers.push_back(std::string("accept: ").append("application/json"));
+    std::string content_type = "application/json";
+    URLFetchSync(url, headers, real_body, content_type,
+        net::URLFetcher::RequestType::POST);
 
     // This should be the `nonce` in the return. we need to
     // make sure we get the nonce in the separate request observation. seems
@@ -263,7 +293,7 @@ void ConfirmationsImpl::Step2RefillConfirmationsIfNecessary(
     // state-wise (dfa) as well, so the storage types are coded (named) on a
     // dfa-state-respecting basis
 
-    std::unique_ptr<base::Value> value(base::JSONReader::Read(post_resp));
+    std::unique_ptr<base::Value> value(base::JSONReader::Read(response_));
     base::DictionaryValue* dict;
     if (!value->GetAsDictionary(&dict)) {
       BLOG(ERROR) << "2.2 post resp: no dict" << "\n";
@@ -289,30 +319,20 @@ void ConfirmationsImpl::Step2RefillConfirmationsIfNecessary(
     {
       BLOG(INFO) << "step2.3 : GET /v1/confirmation/token/{payment_id}?nonce=: "
           << nonce;
-      happyhttp::Connection conn(GetServerUrl().c_str(), GetServerPort());
-      conn.setcallbacks(OnBegin, OnData, OnComplete, 0);
 
-      // /v1/confirmation/token/{payment_id}
       std::string endpoint = std::string("/v1/confirmation/token/").append(
           real_wallet_address).append("?nonce=").append(nonce);
-
-      conn.request("GET", endpoint.c_str());
-      // h, (const unsigned char *)real_body.c_str(), real_body.size());
-
-      while (conn.outstanding()) {
-        conn.pump();
-      }
-
-      std::string get_resp = happy_data;
+      std::string url = GetServerUrl().append(endpoint);
+      URLFetchSync(url, {}, "", "", net::URLFetcher::RequestType::GET);
 
       /////////////////////////////////////////////////////////////////////////
 
-      // happy_data: {"batchProof":"r2qx2h5ENHASgBxEhN2TjUjtC2L2McDN6g/lZ+nTaQ6q
-      // +6TZH0InhxRHIp0vdUlSbMMCHaPdLYsj/IJbseAtCw==","signedTokens":["VI27MCax
-      // 4V9Gk60uC1dwCHHExHN2WbPwwlJk87fYAyo=","mhFmcWHLk5X8v+a/X0aea24OfGWsfAwW
-      // bP7RAeXXLV4="]}
+      // response_: {"batchProof":"r2qx2h5ENHASgBxEhN2TjUjtC2L2McDN6g/lZ+nTaQ6q+
+      // 6TZH0InhxRHIp0vdUlSbMMCHaPdLYsj/IJbseAtCw==","signedTokens":["VI27MCax4
+      // V9Gk60uC1dwCHHExHN2WbPwwlJk87fYAyo=","mhFmcWHLk5X8v+a/X0aea24OfGWsfAwWb
+      // P7RAeXXLV4="]}
 
-      std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(response_));
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
         BLOG(ERROR) << "2.3 get resp: no dict" << "\n";
@@ -476,36 +496,19 @@ void ConfirmationsImpl::Step3RedeemConfirmation(
       "step3.1c: POST /v1/confirmation/{confirmation_id}/{credential} "
       << confirmation_id;
 
-  happyhttp::Connection conn(GetServerUrl().c_str(), GetServerPort());
-  conn.setcallbacks(OnBegin, OnData, OnComplete, 0);
-
   std::string endpoint = std::string("/v1/confirmation/").append(
       confirmation_id).append("/").append(credential);
-
-  // -d "{ \"creativeInstanceId\": \"6ca04e53-2741-4d62-acbb-e63336d7ed46\", \"p
-  // ayload\": {}, \"prePaymentToken\": \"cgILwnP8ua+cZ+YHJUBq4h+U+mt6ip8lX9hzEl
-  // HrSBg=\", \"type\": \"landed\" }"
-
-  const char * h[] = {
-    "accept", "application/json",
-    "Content-Type", "application/json",
-    NULL,
-    NULL
-  };
-
-  conn.request("POST", endpoint.c_str(), h,
-      (const unsigned char *)real_body.c_str(), real_body.size());
-
-  while (conn.outstanding()) {
-    conn.pump();
-  }
-
-  std::string post_resp = happy_data;
+  std::string url = GetServerUrl().append(endpoint);
+  std::vector<std::string> headers = {};
+  headers.push_back(std::string("accept: ").append("application/json"));
+  std::string content_type = "application/json";
+  URLFetchSync(url, headers, real_body, content_type,
+      net::URLFetcher::RequestType::POST);
 
   /////////////////////////////////////////////////////////////////////////////
 
-  if (happy_status == 201) {  // 201 - created
-    std::unique_ptr<base::Value> value(base::JSONReader::Read(happy_data));
+  if (response_code_ == 201) {  // 201 - created
+    std::unique_ptr<base::Value> value(base::JSONReader::Read(response_));
     base::DictionaryValue* dict;
     if (!value->GetAsDictionary(&dict)) {
       BLOG(ERROR) << "no 3.1c resp dict" << "\n";
@@ -592,35 +595,25 @@ void ConfirmationsImpl::Step3RedeemConfirmation(
     BLOG(INFO) <<
         "step4.1 : GET /v1/confirmation/{confirmation_id}/paymentToken";
 
-    happyhttp::Connection conn(GetServerUrl().c_str(), GetServerPort());
-    conn.setcallbacks(OnBegin, OnData, OnComplete, 0);
-
     std::string endpoint = std::string("/v1/confirmation/").append(
         confirmation_id).append("/paymentToken");
+    std::string url = GetServerUrl().append(endpoint);
+    URLFetchSync(url, {}, "", "", net::URLFetcher::RequestType::GET);
 
-    conn.request("GET", endpoint.c_str());
-
-    while (conn.outstanding()) {
-      conn.pump();
-    }
-
-    int get_resp_code = happy_status;
-    std::string get_resp = happy_data;
-
-    if (!(get_resp_code == 200 || get_resp_code == 202)) {
+    if (!(response_code_ == 200 || response_code_ == 202)) {
       // something broke before server could decide paid:true/false
-      BLOG(ERROR) << "ProcessIOUBundle response code: " << get_resp_code;
+      BLOG(ERROR) << "ProcessIOUBundle response code: " << response_code_;
 
       return unfinished;
     }
 
     // 2018.12.10 apparently, server side has changed to always pay tokens, so
     // we won't recv 202 response?
-    if (get_resp_code == 202) {  // paid:false response
+    if (response_code_ == 202) {  // paid:false response
       // 1. collect estimateToken from JSON
       // 2. derive estimate
 
-      std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(response_));
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
         BLOG(ERROR) << "4.1 202 no dict" << "\n";
@@ -655,9 +648,9 @@ void ConfirmationsImpl::Step3RedeemConfirmation(
       return unfinished;
     }
 
-    if (get_resp_code == 200) {  // paid:true response
+    if (response_code_ == 200) {  // paid:true response
       base::Value *v;
-      std::unique_ptr<base::Value> value(base::JSONReader::Read(get_resp));
+      std::unique_ptr<base::Value> value(base::JSONReader::Read(response_));
       base::DictionaryValue* dict;
       if (!value->GetAsDictionary(&dict)) {
         BLOG(ERROR) << "4.1 200 no dict" << "\n";
@@ -895,34 +888,21 @@ void ConfirmationsImpl::Step3RedeemConfirmation(
 
     std::string json;
     base::JSONWriter::Write(sdict, &json);
-
-    const char* h[] = {
-      "accept", "application/json",
-      "Content-Type", "application/json",
-      NULL,
-      NULL
-    };
-
     std::string real_body = json;
 
-    happyhttp::Connection conn(GetServerUrl().c_str(), GetServerPort());
-    conn.setcallbacks(OnBegin, OnData, OnComplete, 0);
-    conn.request("PUT", endpoint.c_str(), h,
-        (const unsigned char *)real_body.c_str(), real_body.size());
+    std::string url = GetServerUrl().append(endpoint);
+    std::vector<std::string> headers = {};
+    headers.push_back(std::string("accept: ").append("application/json"));
+    std::string content_type = "application/json";
+    URLFetchSync(url, headers, real_body, content_type,
+        net::URLFetcher::RequestType::PUT);
 
-    while (conn.outstanding()) {
-      conn.pump();
-    }
-
-    std::string put_resp = happy_data;
-    int put_resp_code = happy_status;
-
-    if (put_resp_code != 200) {
-      BLOG(ERROR) << "Step5CashInPaymentIOUs response code: " << put_resp_code;
+    if (response_code_ != 200) {
+      BLOG(ERROR) << "Step5CashInPaymentIOUs response code: " << response_code_;
       return;
     }
 
-    if (put_resp_code == 200) {
+    if (response_code_ == 200) {
       BLOG(INFO) << "step5.2 : store txn ids and actual payment";
 
       VectorConcat(&this->fully_submitted_payment_bundles,
@@ -1216,22 +1196,6 @@ void ConfirmationsImpl::Step3RedeemConfirmation(
   }
 
 ///////////////////////////////////////////////////////////////////
-
-ConfirmationsImpl::ConfirmationsImpl(
-    ConfirmationsClient* confirmations_client) :
-    is_initialized_(false),
-    step_2_refill_confirmations_timer_id_(0),
-    step_4_retrieve_payment_ious_timer_id_(0),
-    step_5_cash_in_payment_ious_timer_id_(0),
-    confirmations_client_(confirmations_client) {
-  LoadState();
-}
-
-ConfirmationsImpl::~ConfirmationsImpl() {
-  StopRefillingConfirmations();
-  StopRetrievingPaymentIOUS();
-  StopCashingInPaymentIOUS();
-}
 
 void ConfirmationsImpl::SetWalletInfo(std::unique_ptr<WalletInfo> info) {
   wallet_info_.payment_id = info->payment_id;

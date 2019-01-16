@@ -5,6 +5,7 @@
 #ifndef BAT_CONFIRMATIONS_CONFIRMATIONS_IMPL_H_
 #define BAT_CONFIRMATIONS_CONFIRMATIONS_IMPL_H_
 
+#include <string>
 #include <mutex>
 
 #include "brave/vendor/challenge_bypass_ristretto_ffi/src/wrapper.hpp"
@@ -12,24 +13,44 @@
 #include "bat/confirmations/confirmations.h"
 #include "bat/confirmations/notification_info.h"
 #include "bat/confirmations/issuers_info.h"
-
-#include "happyhttp.h"
+#include "net/url_request/url_fetcher.h"
+#include "net/url_request/url_fetcher_delegate.h"
+#include "net/url_request/url_request_context.h"
 
 #define CONFIRMATIONS_SIGNATURE_ALGORITHM "ed25519"
-
-void OnBegin(const happyhttp::Response* r, void* userdata);
-void OnData(
-    const happyhttp::Response* r,
-    void* userdata,
-    const unsigned char* data,
-    int n);
-void OnComplete(const happyhttp::Response* r, void* userdata);
 
 namespace confirmations {
 
 using namespace challenge_bypass_ristretto;
 
-class ConfirmationsImpl : public Confirmations {
+class Semaphore {
+ public:
+  explicit Semaphore(int count = 0) : count_(count) {}
+
+  void signal() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    count_++;
+    condition_variable_.notify_one();
+  }
+
+  void wait() {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    while (count_ == 0) {
+      condition_variable_.wait(lock);
+    }
+
+    count_--;
+  }
+
+ private:
+  std::mutex mutex_;
+  std::condition_variable condition_variable_;
+  int count_;
+};
+
+class ConfirmationsImpl : public Confirmations,
+                          public net::URLFetcherDelegate {
  public:
   explicit ConfirmationsImpl(ConfirmationsClient* confirmations_client);
   ~ConfirmationsImpl() override;
@@ -47,6 +68,18 @@ class ConfirmationsImpl : public Confirmations {
   const size_t refill_amount = 5 * low_token_threshold;
 
   WalletInfo wallet_info_;
+
+  Semaphore semaphore_;
+  std::string response_;
+  int response_code_;
+
+  void URLFetchSync(
+      const std::string& url,
+      const std::vector<std::string>& headers,
+      const std::string& content,
+      const std::string& content_type,
+      net::URLFetcher::RequestType request_type);
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
   uint32_t step_2_refill_confirmations_timer_id_;
   void StartRefillingConfirmations(const uint64_t start_timer_in);
