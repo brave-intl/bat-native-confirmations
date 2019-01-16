@@ -51,14 +51,6 @@ class MockConfirmationsClient : public ConfirmationsClient {
       const std::string& name,
       OnResetCallback callback));
 
-  MOCK_METHOD6(URLRequest, void(
-      const std::string& url,
-      const std::vector<std::string>& headers,
-      const std::string& content,
-      const std::string& content_type,
-      const URLRequestMethod method,
-      URLRequestCallback callback));
-
   std::unique_ptr<LogStream> Log(
       const char* file,
       const int line,

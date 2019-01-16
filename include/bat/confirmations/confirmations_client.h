@@ -24,12 +24,6 @@ CONFIRMATIONS_EXPORT enum LogLevel {
   LOG_INFO = 3
 };
 
-enum CONFIRMATIONS_EXPORT URLRequestMethod {
-  GET = 0,
-  PUT = 1,
-  POST = 2
-};
-
 enum CONFIRMATIONS_EXPORT Result {
   SUCCESS,
   FAILED
@@ -46,9 +40,6 @@ using OnLoadCallback = std::function<void(const Result, const std::string&)>;
 
 using OnResetCallback = std::function<void(const Result)>;
 
-using URLRequestCallback = std::function<void(const int, const std::string&,
-  const std::map<std::string, std::string>& headers)>;
-
 class CONFIRMATIONS_EXPORT ConfirmationsClient {
  public:
   virtual ~ConfirmationsClient() = default;
@@ -60,15 +51,6 @@ class CONFIRMATIONS_EXPORT ConfirmationsClient {
 
   // Should destroy the timer associated with the specified timer identifier
   virtual void KillTimer(uint32_t timer_id) = 0;
-
-  // Should start a URL request
-  virtual void URLRequest(
-      const std::string& url,
-      const std::vector<std::string>& headers,
-      const std::string& content,
-      const std::string& content_type,
-      const URLRequestMethod method,
-      URLRequestCallback callback) = 0;
 
   // Should save a value to persistent storage
   virtual void Save(

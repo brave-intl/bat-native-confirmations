@@ -74,25 +74,6 @@ void MockConfirmationsClient::KillTimer(uint32_t timer_id) {
   (void)timer_id;
 }
 
-void MockConfirmationsClient::URLRequest(
-    const std::string& url,
-    const std::vector<std::string>& headers,
-    const std::string& content,
-    const std::string& content_type,
-    const URLRequestMethod method,
-    URLRequestCallback callback) {
-  (void)url;
-  (void)headers;
-  (void)content;
-  (void)content_type;
-  (void)method;
-
-  auto response_status_code = 404;
-  std::string response = "";
-
-  callback(response_status_code, response, {});
-}
-
 void MockConfirmationsClient::Save(
     const std::string& name,
     const std::string& value,
