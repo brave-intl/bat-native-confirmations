@@ -20,6 +20,8 @@ config("internal_config") {
 }
 
 executable("bnc-test") {
+  include_dirs = [
+  ]
 
   sources = [
     "src/bat_native_confirmations.cc",
@@ -70,11 +72,9 @@ source_set("confirmations") {
   }
 
   include_dirs = [
-   "deps/happyhttp",
   ]
 
   sources = [
-    "deps/happyhttp/happyhttp.cpp",
     "src/bat/confirmations/notification_info.cc",
     "src/bat/confirmations/issuer_info.cc",
     "src/bat/confirmations/issuers_info.cc",
