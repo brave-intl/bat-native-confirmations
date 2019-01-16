@@ -26,10 +26,6 @@ executable("bnc-test") {
     "src/mock_confirmations_client.cc",
   ]
 
-  include_dirs = [
-#    "src",
-  ]
-
   deps = [
     ":confirmations",
   ]
