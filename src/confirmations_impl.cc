@@ -55,13 +55,14 @@ void OnComplete(const happyhttp::Response* r, void* userdata) {
 
 namespace confirmations {
 
-void vector_concat(
+void ConfirmationsImpl::VectorConcat(
     std::vector<std::string>* dest,
     std::vector<std::string>* source) {
   dest->insert(dest->end(), source->begin(), source->end());
 }
 
-std::unique_ptr<base::ListValue> munge(std::vector<std::string> v) {
+std::unique_ptr<base::ListValue> ConfirmationsImpl::Munge(
+    std::vector<std::string> v) {
   base::ListValue * list = new base::ListValue();
 
   for (auto x : v) {
@@ -132,21 +133,21 @@ std::string ConfirmationsImpl::toJSONString() {
   dict.SetKey("server_confirmation_key",
       base::Value(server_confirmation_key_));
   dict.SetWithoutPathExpansion("server_bat_payment_names",
-      munge(server_bat_payment_names));
+      Munge(server_bat_payment_names));
   dict.SetWithoutPathExpansion("server_bat_payment_keys",
-      munge(server_bat_payment_keys));
+      Munge(server_bat_payment_keys));
   dict.SetWithoutPathExpansion("original_confirmation_tokens",
-      munge(original_confirmation_tokens));
+      Munge(original_confirmation_tokens));
   dict.SetWithoutPathExpansion("blinded_confirmation_tokens",
-      munge(blinded_confirmation_tokens));
+      Munge(blinded_confirmation_tokens));
   dict.SetWithoutPathExpansion("signed_blinded_confirmation_tokens",
-      munge(signed_blinded_confirmation_tokens));
+      Munge(signed_blinded_confirmation_tokens));
   dict.SetWithoutPathExpansion("payment_token_json_bundles",
-      munge(payment_token_json_bundles));
+      Munge(payment_token_json_bundles));
   dict.SetWithoutPathExpansion("signed_blinded_payment_token_json_bundles",
-      munge(signed_blinded_payment_token_json_bundles));
+      Munge(signed_blinded_payment_token_json_bundles));
   dict.SetWithoutPathExpansion("fully_submitted_payment_bundles",
-      munge(fully_submitted_payment_bundles));
+      Munge(fully_submitted_payment_bundles));
 
   std::string json;
   base::JSONWriter::Write(dict, &json);
@@ -360,11 +361,11 @@ void ConfirmationsImpl::Step2RefillConfirmationsIfNecessary(
       BLOG(INFO) <<
           "step2.4 : store the signed blinded confirmations tokens & pre data";
 
-      vector_concat(&this->original_confirmation_tokens,
+      VectorConcat(&this->original_confirmation_tokens,
           &local_original_confirmation_tokens);
-      vector_concat(&this->blinded_confirmation_tokens,
+      VectorConcat(&this->blinded_confirmation_tokens,
           &local_blinded_confirmation_tokens);
-      vector_concat(&this->signed_blinded_confirmation_tokens,
+      VectorConcat(&this->signed_blinded_confirmation_tokens,
           &server_signed_blinded_confirmations);
       this->SaveState();
     }  // 2.3
@@ -924,7 +925,7 @@ void ConfirmationsImpl::Step3RedeemConfirmation(
     if (put_resp_code == 200) {
       BLOG(INFO) << "step5.2 : store txn ids and actual payment";
 
-      vector_concat(&this->fully_submitted_payment_bundles,
+      VectorConcat(&this->fully_submitted_payment_bundles,
           &this->signed_blinded_payment_token_json_bundles);
       this->signed_blinded_payment_token_json_bundles.clear();
       this->SaveState();

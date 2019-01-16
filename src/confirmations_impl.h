@@ -122,6 +122,10 @@ class ConfirmationsImpl : public Confirmations {
   std::string toJSONString();
   bool FromJSONString(std::string json);
 
+  void VectorConcat(
+      std::vector<std::string>* dest,
+      std::vector<std::string>* source);
+  std::unique_ptr<base::ListValue> Munge(std::vector<std::string> v);
   std::vector<std::string> Unmunge(base::Value *value);
   std::string BATNameFromBATPublicKey(std::string token);
   bool ProcessIOUBundle(std::string bundle_json);
