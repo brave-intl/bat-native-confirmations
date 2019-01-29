@@ -366,6 +366,19 @@ void ConfirmationsImpl::Step2cRefillConfirmationsIfNecessary(
 
   base::Value *v;
 
+  if (!(v = dict->FindKey("publicKey"))) {
+    BLOG(ERROR) << "  Step2.3: No public key";
+    OnStep2RefillConfirmationsIfNecessary(FAILED);
+    return;
+  }
+
+  std::string public_key = v->GetString();
+  if (public_key != local_server_confirmation_key_) {
+    BLOG(ERROR) << "  Step2.3: Public key mismatch";
+    OnStep2RefillConfirmationsIfNecessary(FAILED);
+    return;
+  }
+
   if (!(v = dict->FindKey("batchProof"))) {
     BLOG(ERROR) << "  Step2.3: No batchProof";
     OnStep2RefillConfirmationsIfNecessary(FAILED);
