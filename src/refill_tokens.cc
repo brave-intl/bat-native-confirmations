@@ -133,7 +133,7 @@ void RefillTokens::RequestSignedTokens() {
   auto callback = std::bind(&RefillTokens::OnRequestSignedTokens,
       this, ads_serve_url, _1, _2, _3);
 
-  confirmations_client_->URLRequest(ads_serve_url, headers, body, content_type,
+  confirmations_client_->LoadURL(ads_serve_url, headers, body, content_type,
       URLRequestMethod::POST, callback);
 }
 
@@ -199,7 +199,7 @@ void RefillTokens::GetSignedTokens() {
   auto callback = std::bind(&RefillTokens::OnGetSignedTokens, this,
       last_fetch_tokens_ads_serve_url_, _1, _2, _3);
 
-  confirmations_client_->URLRequest(last_fetch_tokens_ads_serve_url_, {}, "",
+  confirmations_client_->LoadURL(last_fetch_tokens_ads_serve_url_, {}, "",
       "", URLRequestMethod::GET, callback);
 }
 

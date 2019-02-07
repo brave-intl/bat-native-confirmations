@@ -153,7 +153,7 @@ void RedeemToken::CreateConfirmation(
       this, ads_serve_url, _1, _2, _3, confirmation_id,
       payment_token_base64, blinded_payment_token_base64);
 
-  confirmations_client_->URLRequest(ads_serve_url, headers, body,
+  confirmations_client_->LoadURL(ads_serve_url, headers, body,
       content_type, URLRequestMethod::POST, callback);
 }
 
@@ -235,7 +235,7 @@ void RedeemToken::FetchPaymentToken(
       this, ads_serve_url, _1, _2, _3, payment_token_base64,
       blinded_payment_token_base64);
 
-  confirmations_client_->URLRequest(ads_serve_url, {}, "", "",
+  confirmations_client_->LoadURL(ads_serve_url, {}, "", "",
       URLRequestMethod::GET, callback);
 }
 
